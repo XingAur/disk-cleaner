@@ -2,6 +2,16 @@
 
 一个轻量级 Windows C 盘清理工具，基于 Tauri + Vue + Rust 实现。应用以免安装单文件 EXE 为主要交付目标，启动时请求管理员权限，扫描和清理过程均带进度反馈。
 
+## 下载
+
+仓库内已包含当前便携免安装版本：
+
+```text
+dist-exe/C盘清理助手.exe
+```
+
+下载后直接运行即可。首次启动会触发 Windows UAC 管理员权限确认。
+
 ## 功能特性
 
 - 只扫描系统盘，降低误扫其他磁盘的风险。
@@ -73,17 +83,19 @@ cargo test --lib --test cleaner_tests
 
 ```text
 .
-├─ public/              # 前端静态资源
-├─ src/                 # Vue 前端
-├─ src-tauri/
-│  ├─ icons/            # 应用图标
-│  ├─ src/              # Rust 后端命令和清理逻辑
-│  ├─ tests/            # Rust 测试
-│  ├─ build.rs          # Windows manifest 注入
-│  ├─ Cargo.toml
-│  └─ tauri.conf.json
-├─ package.json
-└─ README.md
+|-- dist-exe/
+|   `-- C盘清理助手.exe
+|-- public/
+|-- src/
+|-- src-tauri/
+|   |-- icons/
+|   |-- src/
+|   |-- tests/
+|   |-- build.rs
+|   |-- Cargo.toml
+|   `-- tauri.conf.json
+|-- package.json
+`-- README.md
 ```
 
 ## 安全说明
@@ -92,11 +104,11 @@ cargo test --lib --test cleaner_tests
 
 ## 上传仓库前
 
-以下目录和文件属于可再生成内容，已经通过 `.gitignore` 排除：
+以下内容属于可再生成内容，已通过 `.gitignore` 排除：
 
 - `node_modules/`
 - `dist/`
-- `dist-exe/`
 - `src-tauri/target/`
-- `*.exe`
-- `*.log`
+- 安装包和其他临时 EXE
+
+当前仅保留 `dist-exe/C盘清理助手.exe` 作为仓库内便携发布文件。
