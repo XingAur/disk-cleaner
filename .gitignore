@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Frontend build output
+dist/
+dist-ssr/
+
+# Tauri / Rust build output
+src-tauri/target/
+target/
+
+# Packaged executables and local release copies
+dist-exe/
+*.exe
+*.msi
+*.msix
+
+# Runtime logs and temporary reports
+logs/
+src-tauri/**/logs/
+*.log
+exe-path.txt
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# npm debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

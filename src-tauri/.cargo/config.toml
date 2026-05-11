@@ -1,0 +1,7 @@
+[build]
+rustflags = [
+  '--cfg',
+  'getrandom_backend="windows_legacy"',
+  '-C',
+  'target-feature=+crt-static'
+]
