@@ -7,7 +7,7 @@
 请在 GitHub Release 中下载免安装版本：
 
 ```text
-C盘清理助手-Portable.exe
+disk-cleaner-portable.exe
 ```
 
 下载后直接运行即可。首次启动会触发 Windows UAC 管理员权限确认，以尽可能清理系统临时目录、回收站和 Windows 更新缓存。
@@ -121,7 +121,7 @@ npm run verify
 npm run tauri:build
 ```
 
-便携 EXE 使用 `src-tauri/target/release/disk-cleaner-tauri.exe`，上传到 Release 时建议命名为 `C盘清理助手-Portable.exe`。
+便携 EXE 使用 `src-tauri/target/release/disk-cleaner-tauri.exe`，上传到 Release 时建议命名为 `disk-cleaner-portable.exe`。
 
 CI 会在 Windows 环境中执行依赖安装、类型检查、前端构建、Rust 测试和 Tauri 构建，并上传便携 EXE 与 NSIS 安装包作为 artifacts。
 
