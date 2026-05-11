@@ -8,13 +8,13 @@ dist-ssr/
 # Tauri / Rust build output
 src-tauri/target/
 target/
+.worktrees/
 
 # Packaged executables and local release copies
-dist-exe/*
+dist-exe/
 *.exe
 *.msi
 *.msix
-!dist-exe/C盘清理助手.exe
 
 # Runtime logs and temporary reports
 logs/

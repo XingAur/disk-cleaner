@@ -188,7 +188,7 @@ h1 {
   gap: 8px;
 }
 
-.total-panel span,
+.total-head span,
 .report-panel span,
 .total-head em {
   color: var(--text-muted);
@@ -205,13 +205,6 @@ h1 {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.total-panel strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 24px;
-  line-height: 1;
-}
-
 .total-panel small,
 .report-panel small {
   display: block;
@@ -219,6 +212,37 @@ h1 {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.disk-stat {
+  min-width: 0;
+  padding: 7px 7px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--panel-bg-strong);
+}
+
+.disk-stat small {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.disk-stat strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -38,10 +38,23 @@
 
       <section class="total-panel">
         <div class="total-head">
-          <span>可处理空间</span>
-          <em>按卡片选择</em>
+          <span>C 盘概览</span>
+          <em>{{ systemDriveLabel }}</em>
         </div>
-        <strong>{{ formatBytes(totalDiscoverableBytes) }}</strong>
+        <div class="disk-stats">
+          <span class="disk-stat">
+            <small>总容量</small>
+            <strong>{{ formatBytesOrDash(driveSpace?.totalBytes) }}</strong>
+          </span>
+          <span class="disk-stat">
+            <small>当前剩余</small>
+            <strong>{{ formatBytesOrDash(driveSpace?.freeBytes) }}</strong>
+          </span>
+          <span class="disk-stat">
+            <small>可清理</small>
+            <strong>{{ formatBytes(totalDiscoverableBytes) }}</strong>
+          </span>
+        </div>
         <small>{{ progressText }}</small>
         <div class="progress-track" :class="{ active: busy }">
           <div class="progress-fill" :style="{ width: `${activeProgress}%` }" />
@@ -76,11 +89,11 @@
       <section v-if="report" class="report-panel">
         <span>最近清理</span>
         <strong>{{ formatBytes(report.freedBytes) }}</strong>
-        <small>成功 {{ report.deletedCount }} 项，失败 {{ report.failedCount }} 项</small>
+        <small>{{ reportSummary }}</small>
       </section>
 
       <footer class="action-bar">
-        <button class="primary-btn" type="button" :disabled="busy" @click="scan">
+        <button class="primary-btn" type="button" :disabled="busy" @click="scan()">
           {{ phase === 'scan' ? `扫描 ${scanProgress}%` : '扫描' }}
         </button>
         <button class="danger-btn" type="button" :disabled="busy || selectedItems.length === 0" @click="cleanup">
@@ -152,9 +165,18 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 type RiskLevel = 'low' | 'medium' | 'high'
 type ThemeMode = 'system' | 'dark' | 'light'
 type CleanupLevel = 'light' | 'standard' | 'deep'
-type GroupId = 'systemTemp' | 'appCache' | 'windowsOld' | 'largeFiles' | 'oldDownloads' | 'systemBackups'
+type GroupId =
+  | 'systemTemp'
+  | 'appCache'
+  | 'windowsOld'
+  | 'recycleBin'
+  | 'systemCache'
+  | 'largeFiles'
+  | 'oldDownloads'
+  | 'systemBackups'
 
 interface CleanupItem {
+  id: string
   path: string
   sizeBytes: number
   category: string
@@ -174,12 +196,22 @@ interface CleanupPlan {
 
 interface ScanResult {
   systemDrive: string
+  driveSpace?: DriveSpace | null
   plan: CleanupPlan
+}
+
+interface DriveSpace {
+  totalBytes: number
+  freeBytes: number
+  availableBytes: number
 }
 
 interface CleanupReport {
   freedBytes: number
   deletedCount: number
+  skippedCount: number
+  lockedCount: number
+  permissionFailedCount: number
   failedCount: number
   errors: string[]
   logPath?: string
@@ -211,6 +243,12 @@ interface ConfirmDialog {
   resolve: (confirmed: boolean) => void
 }
 
+interface ScanRunOptions {
+  preserveReport?: boolean
+  statusText?: string
+  finalStatus?: (result: ScanResult) => string
+}
+
 const themeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: 'system', label: '跟随系统' },
   { value: 'dark', label: '深色' },
@@ -227,6 +265,8 @@ const emptyPlan: CleanupPlan = {
 }
 
 const plan = ref<CleanupPlan>(emptyPlan)
+const systemDriveLabel = ref('C:\\')
+const driveSpace = ref<DriveSpace | null>(null)
 const selectedGroupList = ref<GroupId[]>([])
 const status = ref('扫描后按等级卡片选择清理项')
 const busy = ref(false)
@@ -246,6 +286,15 @@ let mediaQuery: MediaQueryList | null = null
 const selectedGroupIds = computed(() => new Set(selectedGroupList.value))
 const totalDiscoverableBytes = computed(() => plan.value.reclaimableBytes + plan.value.suggestedBytes)
 const activeProgress = computed(() => (phase.value === 'clean' ? cleanupProgress.value : scanProgress.value))
+const reportSummary = computed(() => {
+  if (!report.value) return ''
+  const parts = [`成功 ${report.value.deletedCount} 项`]
+  if (report.value.skippedCount > 0) parts.push(`跳过 ${report.value.skippedCount} 项`)
+  if (report.value.lockedCount > 0) parts.push(`占用 ${report.value.lockedCount} 项`)
+  if (report.value.permissionFailedCount > 0) parts.push(`权限失败 ${report.value.permissionFailedCount} 项`)
+  if (report.value.failedCount > 0) parts.push(`失败 ${report.value.failedCount} 项`)
+  return parts.join('，')
+})
 const progressText = computed(() => {
   if (phase.value === 'scan') return `${translatePhase(progressPhase.value)} ${scanProgress.value}% · ${progressCurrent.value || '系统盘'}`
   if (phase.value === 'clean') return `${translatePhase(progressPhase.value)} ${cleanupProgress.value}% · ${progressCurrent.value || '准备清理'}`
@@ -257,8 +306,10 @@ const groups = computed<SummaryGroup[]>(() => {
   const systemTemp = itemsByCategory(plan.value.items, 'Low risk cache')
   const appCache = itemsByCategory(plan.value.items, 'Enhanced cache')
   const windowsOld = itemsByCategory(plan.value.items, 'Windows.old')
+  const recycleBin = itemsByCategory(plan.value.items, 'Recycle Bin')
+  const systemCache = itemsByCategory(plan.value.items, 'System update cache')
   const largeFiles = itemsByCategory(plan.value.suggestions, 'Large file suggestion')
-  const oldDownloads = itemsByCategory(plan.value.suggestions, 'Old download suggestion')
+  const oldDownloads = itemsByCategories(plan.value.suggestions, ['Old download suggestion', 'Download item suggestion'])
   const backups = plan.value.systemBackups ?? []
 
   return [
@@ -299,6 +350,30 @@ const groups = computed<SummaryGroup[]>(() => {
       defaultSelected: false
     },
     {
+      id: 'recycleBin',
+      title: '回收站',
+      description: '清空所有磁盘回收站，确认无须恢复后清理',
+      tone: 'tone-confirm',
+      level: 'standard',
+      items: recycleBin,
+      bytes: sumBytes(recycleBin),
+      count: recycleBin.length,
+      selectable: true,
+      defaultSelected: false
+    },
+    {
+      id: 'systemCache',
+      title: '系统缓存',
+      description: 'Windows 更新、错误报告、着色器缓存',
+      tone: 'tone-confirm',
+      level: 'standard',
+      items: systemCache,
+      bytes: sumBytes(systemCache),
+      count: systemCache.length,
+      selectable: true,
+      defaultSelected: false
+    },
+    {
       id: 'largeFiles',
       title: '大文件',
       description: '200 MB 以上候选，需要确认',
@@ -312,8 +387,8 @@ const groups = computed<SummaryGroup[]>(() => {
     },
     {
       id: 'oldDownloads',
-      title: '旧下载',
-      description: '14 天以上下载项，谨慎处理',
+      title: '下载内容',
+      description: '下载目录顶层文件和文件夹，确认后清理',
       tone: 'tone-caution',
       level: 'deep',
       items: oldDownloads,
@@ -380,11 +455,11 @@ async function minimizeWindow() {
   await invoke('minimize_window')
 }
 
-async function scan() {
+async function scan(options: ScanRunOptions = {}) {
   busy.value = true
   phase.value = 'scan'
-  status.value = '正在扫描系统盘...'
-  report.value = null
+  status.value = options.statusText ?? '正在扫描系统盘...'
+  if (!options.preserveReport) report.value = null
   plan.value = emptyPlan
   selectedGroupList.value = []
   scanProgress.value = 0
@@ -395,12 +470,14 @@ async function scan() {
     const result = await invoke<ScanResult>('scan_system_drive', {
       options: { strength: 'deep' }
     })
+    systemDriveLabel.value = result.systemDrive
+    driveSpace.value = result.driveSpace ?? null
     plan.value = normalizePlan(result.plan)
     selectedGroupList.value = groups.value
       .filter(group => group.defaultSelected && group.count > 0)
       .map(group => group.id)
     scanProgress.value = 100
-    status.value = `扫描完成：${result.systemDrive}`
+    status.value = options.finalStatus?.(result) ?? `扫描完成：${result.systemDrive}`
   } catch (error) {
     status.value = `扫描失败：${String(error)}`
   } finally {
@@ -429,11 +506,17 @@ async function cleanup() {
   progressCurrent.value = ''
 
   try {
-    const result = await invoke<CleanupReport>('cleanup_selected', { items: selectedItems.value })
+    const result = await invoke<CleanupReport>('cleanup_selected', {
+      itemIds: selectedItems.value.map(item => item.id)
+    })
     report.value = result
     cleanupProgress.value = 100
-    status.value = `清理完成：释放 ${formatBytes(result.freedBytes)}`
     selectedGroupList.value = []
+    await scan({
+      preserveReport: true,
+      statusText: '清理完成，正在重新扫描...',
+      finalStatus: scanResult => cleanupFinishedStatus(result, scanResult)
+    })
   } catch (error) {
     status.value = `清理失败：${String(error)}`
   } finally {
@@ -492,8 +575,20 @@ function normalizePlan(value: CleanupPlan): CleanupPlan {
   }
 }
 
+function cleanupFinishedStatus(cleanupReport: CleanupReport, scanResult: ScanResult) {
+  const skipped = cleanupReport.skippedCount > 0 ? `，跳过 ${cleanupReport.skippedCount} 项` : ''
+  const failed = cleanupReport.failedCount > 0 ? `，失败 ${cleanupReport.failedCount} 项` : ''
+  const free = scanResult.driveSpace ? `，当前剩余 ${formatBytes(scanResult.driveSpace.freeBytes)}` : ''
+  return `清理完成：释放 ${formatBytes(cleanupReport.freedBytes)}${skipped}${failed}；已重新扫描 ${scanResult.systemDrive}${free}`
+}
+
 function itemsByCategory(items: CleanupItem[], category: string) {
   return items.filter(item => item.category === category)
+}
+
+function itemsByCategories(items: CleanupItem[], categories: string[]) {
+  const categorySet = new Set(categories)
+  return items.filter(item => categorySet.has(item.category))
 }
 
 function sumBytes(items: CleanupItem[]) {
@@ -502,6 +597,7 @@ function sumBytes(items: CleanupItem[]) {
 
 function compactPath(path: string) {
   if (!path) return ''
+  if (path === 'All Recycle Bins') return '所有磁盘回收站'
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts.length > 2 ? `${parts[0]}\\...\\${parts[parts.length - 1]}` : path
 }
@@ -513,9 +609,12 @@ function translatePhase(value: string) {
     Scanned: '已扫描',
     Complete: '完成',
     'Preparing cleanup': '准备清理',
+    'Emptying recycle bin': '清空回收站',
+    'All Recycle Bins': '所有磁盘回收站',
     Deleting: '删除中',
     Deleted: '已删除',
-    Skipped: '已跳过'
+    Skipped: '已跳过',
+    Failed: '失败'
   }
   return map[value] ?? value
 }
@@ -542,5 +641,9 @@ function formatBytes(bytes: number) {
     index += 1
   }
   return index === 0 ? `${bytes} ${units[index]}` : `${value.toFixed(1)} ${units[index]}`
+}
+
+function formatBytesOrDash(bytes?: number | null) {
+  return typeof bytes === 'number' ? formatBytes(bytes) : '--'
 }
 </script>
