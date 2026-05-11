@@ -1,6 +1,6 @@
 [package]
 name = "disk-cleaner-tauri"
-version = "1.0.0"
+version = "1.0.1"
 description = "C盘清理助手"
 authors = ["xyj"]
 edition = "2021"

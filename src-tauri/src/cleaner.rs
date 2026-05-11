@@ -672,7 +672,6 @@ where
         );
     }
 
-    report.log_path = write_report(&report).ok();
     emit_cleanup_progress(
         100,
         "Complete",
@@ -1256,35 +1255,6 @@ fn cleanup_item_id(path: &Path, size_bytes: u64, category: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn write_report(report: &CleanupReport) -> io::Result<PathBuf> {
-    let dir = env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("logs");
-    fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("cleanup-{}.log", timestamp_compact()));
-    let mut content = String::new();
-    content.push_str("C drive cleanup report\n");
-    content.push_str(&format!(
-        "Freed space: {}\n",
-        format_bytes(report.freed_bytes)
-    ));
-    content.push_str(&format!("Deleted: {}\n", report.deleted_count));
-    content.push_str(&format!("Skipped: {}\n", report.skipped_count));
-    content.push_str(&format!("Locked: {}\n", report.locked_count));
-    content.push_str(&format!(
-        "Permission denied: {}\n",
-        report.permission_failed_count
-    ));
-    content.push_str(&format!("Failed: {}\n", report.failed_count));
-    for error in &report.errors {
-        content.push_str(&format!("- {error}\n"));
-    }
-    fs::write(&path, content)?;
-    Ok(path)
-}
-
 fn is_excluded(path: &Path, rules: &Rules) -> bool {
     let Ok(candidate) = path.canonicalize() else {
         return false;
@@ -1442,26 +1412,4 @@ fn system_drive_root() -> PathBuf {
 
 fn system_drive_letter() -> String {
     env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string())
-}
-
-pub fn format_bytes(bytes: u64) -> String {
-    let units = ["B", "KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64;
-    let mut index = 0;
-    while value >= 1024.0 && index < units.len() - 1 {
-        value /= 1024.0;
-        index += 1;
-    }
-    if index == 0 {
-        format!("{} {}", bytes, units[index])
-    } else {
-        format!("{value:.1} {}", units[index])
-    }
-}
-
-fn timestamp_compact() -> String {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0));
-    now.as_secs().to_string()
 }

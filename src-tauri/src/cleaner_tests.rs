@@ -442,6 +442,16 @@ fn cleanup_deletes_selected_files_and_reports_failures() {
 }
 
 #[test]
+fn cleanup_does_not_write_log_file_by_default() {
+    let report = execute_cleanup(&CleanupPlan::default()).expect("cleanup");
+
+    assert!(
+        report.log_path.is_none(),
+        "cleanup should not create logs beside the portable exe"
+    );
+}
+
+#[test]
 fn cleanup_does_not_report_stale_recycle_bytes_when_live_recycle_bin_is_empty() {
     let plan = CleanupPlan {
         items: vec![CleanupItem {
