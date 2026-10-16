@@ -50,6 +50,7 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.artifact }}
+          cache-on-failure: true
       - run: npm ci
       - name: Check types and UI logic
         run: npm run check && npm test
@@ -74,7 +75,7 @@ jobs:
           mkdir -p packages
           bundle="src-tauri/target/universal-apple-darwin/release/bundle"
           app="$bundle/macos/磁盘管家.app"
-          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/disk-cleaner-tauri"
+          lipo "$app/Contents/MacOS/disk-cleaner-tauri" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
           cp "$bundle"/dmg/*.dmg packages/disk-cleaner-macos-universal.dmg
           ditto -c -k --sequesterRsrc --keepParent "$app" packages/disk-cleaner-macos-universal.app.zip
