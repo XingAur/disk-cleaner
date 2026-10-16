@@ -207,6 +207,7 @@ fn recycle_bin_files_are_counted_as_cleanup_candidates() {
     assert_eq!(plan.reclaimable_bytes, 2048);
 }
 
+#[cfg(target_os = "windows")]
 #[test]
 fn recycle_bin_roots_are_created_for_every_drive_root() {
     let roots = recycle_bin_roots_for_drive_roots(&[
