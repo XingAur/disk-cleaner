@@ -1,4 +1,4 @@
-[build]
+[target.'cfg(windows)']
 rustflags = [
   '--cfg',
   'getrandom_backend="windows_legacy"',
