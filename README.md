@@ -1,137 +1,108 @@
-# C盘清理助手
+# 磁盘管家 · Disk Cleaner
 
-一个轻量级 Windows C 盘清理工具，基于 Tauri + Vue + Rust 实现。应用以免安装单文件 EXE 为主要交付目标，启动时请求管理员权限，扫描和清理过程均带进度反馈。
+基于 Tauri 2、Vue 3、Rust 与 [Coolove UI](https://github.com/XingAur/coolove-ui) 的中文 Windows / macOS 桌面磁盘盘点工具。将 AI 工具内容、系统临时文件、应用缓存与下载内容放在同一个工作区，查看来源和删除影响，再人工决定如何处理。
 
-## 下载
+## 使用
 
-请在 GitHub Release 中下载免安装版本：
+Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner-windows-x64-setup.exe` 安装；macOS 下载 Universal DMG，拖入 Applications，兼容 Intel 与 Apple Silicon。默认以普通用户权限启动，1280×820 完整窗口，最小 960×640。支持 Windows 10/11 x64 与 macOS 10.15+（Apple Silicon 需 macOS 11+）。Windows 需 Microsoft Edge WebView2 Runtime，不需要 Python。macOS 包采用 ad-hoc 签名，尚未配置 Apple Developer ID 签名或公证。
 
-```text
-disk-cleaner-portable.exe
+1. 点击「开始扫描」，盘点已知目录。没有自动选择任何条目。
+2. 按分类、来源、大小筛选，支持空格分隔的多关键词及 `*` 通配符搜索。
+3. 单击查看来源证据与删除影响；双击目录浏览子项，文本文件可预览前 64 KiB。
+4. 用复选框、Ctrl 或 Shift 多选，将内容加入跨页清理清单。聊天、模型、成果与未知来源需要逐项审核。
+5. 核对清单、路径与影响，默认移入 Windows 回收站或 macOS Finder 废纸篓。只有已知临时内容可以选择永久删除。
+6. 在 Windows 回收站 / Finder 废纸篓中还原或清空。**移入回收站不会立即释放空间**，展示的逻辑大小也不是实际磁盘释放量。
+
+## 图标与托盘
+
+应用、安装器、macOS Dock、系统托盘和界面品牌均使用提供的蓝色章鱼图片，保留透明背景与原图比例。标题栏的「隐藏到托盘」可保留进程；点击托盘图标恢复窗口，右键菜单提供打开、隐藏、退出。关闭窗口仍按原有退出行为处理。
+
+## 扫描范围
+
+| 来源 | 内容 | 处理边界 |
+| --- | --- | --- |
+| Codex | sessions、archived_sessions、log、tmp，以及顶层配置/状态文件 | 会话需审核；凭据、配置、状态数据库禁止处理 |
+| Claude Code | projects、debug | 会话需审核；调试日志列为候选 |
+| Cursor | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 缓存列为候选；应用状态禁止整体处理 |
+| Ollama | `.ollama/models`，支持 `OLLAMA_MODELS` | 默认保护，建议优先用 `ollama rm` 管理模型 |
+| ComfyUI | 用户目录/文档目录下的 ComfyUI，或手动登记安装根目录 | output、models 默认保护；temp 为临时内容 |
+| Hugging Face / LM Studio | 常见模型目录 | 默认保护；含链接的目录禁止整体处理 |
+| Python / Node.js | pip 下载缓存、npm 内容缓存 | 不扫描项目环境、node_modules 或虚拟环境 |
+| Chrome / Edge | 默认用户配置的常见缓存目录 | 关闭浏览器后审核 |
+| Windows | 用户临时目录、Windows Temp、CrashDumps、Windows.old、更新下载目录 | 临时内容可审核；Windows.old、更新缓存通过 Windows 存储设置管理 |
+| 下载与自定义目录 | Downloads 直接子项，或人工登记目录的直接子项 | 默认保护，可用大小筛选找大文件 |
+| 大文件 | Desktop、Documents、Videos 中至少 512 MiB 的文件，最多向下 4 层 | 保留未知来源与默认保护；不进入链接或项目元数据目录 |
+
+macOS 使用 HOME、Library/Caches、Library/Application Support、用户临时目录、Downloads、Movies 等路径；不扫描 Windows 系统目录。废纸篓容量仅统计当前用户的 `~/.Trash`，不含外置卷，权限不足时可能无法统计；清倒操作交由 Finder 确认。
+
+目录规则只表示关联，不证明是谁创建了文件。不解析聊天正文推断作者；没有证据的内容保持未知或人工登记标记。不承诺覆盖所有安装渠道与版本。
+
+「登记目录」支持 API / 自写脚本输出、普通未知目录、ComfyUI 安装根目录，最多 32 个。登记和外观偏好保存在本机 WebView 存储中；扫描内容与清理清单仅保存在内存，不写清理日志，不上传文件。
+
+## 安全边界
+
+- 清理命令仅接受本次扫描的条目 ID，客户端不能提交任意删除路径。
+- 后端重复验证保护状态、人工审核、允许的删除模式；过期扫描或伪造 ID 会拒绝执行。
+- 执行前复查路径及递归目录快照（名称、大小、修改/创建时间、类型、只读属性）。发生变化要求重新扫描；这不是文件内容的密码学校验，也不能代替关闭正在使用文件的程序。
+- 不跟随符号链接、junction 或其他重解析点；不接受 UNC、设备路径、路径穿越或数据流。包含凭据、数据库、项目元数据的条目禁止整体清理。
+- 扫描取消后，部分结果只供查看；读取不完整或超限的条目禁止处理。每个候选最多 20 万项；单个登记目录最多列出 1 万个直接子项；目录浏览最多 2000 项。
+- Windows 默认通过 `IFileOperation` 回收，并通过删除前回调拒绝永久删除兜底。失败保留明确错误，不更改 ACL、不夺取所有权、不自动提权。macOS 使用系统 NSFileManager 废纸篓接口，不退回永久删除。
+- 清空回收站独立于文件清单，要求输入确认文本并保留 Windows 原生确认。作用于全部本地磁盘的回收站。
+- 权限不足、文件占用和扫描遗漏会导致处理失败。系统还原点、Windows.old 和更新缓存请通过 Windows 管理工具处理。
+
+## 外观与组件库
+
+内置晴空白、曜石黑、薄荷庭院、奶油拿铁、樱花粉、午夜蓝、紫藤夜色、深林绿及跟随系统。所有组件使用 Coolove UI token。
+
+Coolove UI 0.5.0 新增桌面侧栏、导航、工具栏、文件表格、详情栏与清单操作栏。源码在相邻的 `D:\Code\coolove-ui`，应用内的 `src/coolove-ui` 是同步副本，已纳入 Git，CI 无需相邻仓库。
+
+修改组件库后同步：
+
+```powershell
+npm run sync:ui
 ```
 
-下载后直接运行即可。首次启动会触发 Windows UAC 管理员权限确认，以尽可能清理系统临时目录、回收站和 Windows 更新缓存。
+## 开发和构建
 
-## 功能特性
+要求 Node.js 22.18+（推荐 24）、Rust stable、Visual Studio MSVC C++ 工具链及 Windows SDK。
 
-- 以 C 盘空间治理为主，额外聚合所有本地磁盘的回收站，避免 Windows 回收站合并视图漏扫。
-- 展示 C 盘总容量、当前剩余空间、可清理空间；清理完成后自动重新扫描刷新剩余空间。
-- 支持浅色、深色、跟随系统主题。
-- 清理范围按轻度、标准、深度拆成独立卡片，用户自行选择要清理的部分。
-- 主界面按系统临时、应用缓存、Windows.old、回收站、系统缓存、大文件、下载内容、系统备份点分组展示。
-- 清理前使用应用内统一弹窗二次确认。
-- 清理过程永久删除选中项目，完成后会自动重新扫描刷新结果；失败、占用、权限不足和已不存在的文件会在结果中分类统计，不再写入本地日志文件。
-- 系统备份点单独列出，不参与普通文件清理。
-- 内置 Windows Common Controls v6 manifest，避免部分系统上原生弹窗入口点异常。
-
-## 卡片等级
-
-| 等级 | 卡片 | 说明 |
-| --- | --- | --- |
-| 轻度 | 系统临时 | 默认勾选，主要处理 Temp、崩溃转储、缩略图缓存等低风险项目 |
-| 标准 | 应用缓存、Windows.old、回收站、系统缓存 | 不默认勾选，适合确认后释放更多空间 |
-| 深度 | 大文件、下载内容、系统备份点 | 不默认勾选或不参与普通清理，需要用户谨慎判断 |
-
-## 技术栈
-
-- Tauri 2
-- Vue 3
-- TypeScript
-- Rust
-- MSVC Windows 构建链
-
-## 环境要求
-
-- Windows 10/11 x64
-- Node.js 18+
-- Rust stable
-- Microsoft Visual Studio Build Tools，需包含 MSVC C++ 工具链和 Windows SDK
-
-## 开发
-
-```bash
+```powershell
 npm ci
 npm run tauri:dev
 ```
 
-## 构建
+仅前端预览：`npm run dev`。浏览器始终明确显示演示模式，使用模拟数据，所有实际清理操作禁用。桌面版首次启动为空状态，等待用户主动扫描。
 
-```bash
-npm ci
-npm run tauri:build
+```powershell
+npm run verify
+npm run tauri:build -- --no-bundle
 ```
 
-构建完成后，便携 EXE 位于：
-
-```text
-src-tauri/target/release/disk-cleaner-tauri.exe
-```
-
-NSIS 安装包位于：
-
-```text
-src-tauri/target/release/bundle/nsis/
-```
+Windows 便携文件输出：`src-tauri/target/release/disk-cleaner-tauri.exe`。分发时命名为 `disk-cleaner-portable.exe`。需要 NSIS 安装包时运行 `npm run tauri:build -- --bundles nsis`。macOS 需在 Mac 上添加两种 Rust target 后执行 `npm run tauri:build -- --target universal-apple-darwin --bundles app,dmg`。
 
 ## 验证
 
-```bash
-npm ci
-npm run verify
+`npm run verify` 执行 TypeScript 检查、前端交互逻辑测试、前端构建与 Rust 测试。
+
+新增测试覆盖保护审核、伪造/过期 ID、快照变化、目录去重、临时文件永久删除限制、凭据与数据库保护、目录浏览/文本预览、取消扫描、路径穿越、Windows junction 以及拒绝永久删除兜底。原 1.0 清理器仅在测试构建中保留回归参考，不再暴露桌面命令。
+
+Windows 回收站集成测试单独运行，只将自动生成的微小测试文件移入回收站，**不清空回收站**：
+
+```powershell
+cd src-tauri
+cargo test --lib native_recycle_of_disposable_fixture -- --ignored --nocapture
 ```
 
-如果只验证 Rust 清理规则和安全边界：
+## 设计参考
 
-```bash
-npm run test:rust
-```
+功能设计参考 [scarlimith/ai-disk-manager](https://github.com/scarlimith/ai-disk-manager) 的公开介绍。该项目仅发布发行资料，不公开应用源码；本项目独立实现，使用 Coolove UI，不复制参考项目的代码或角色素材。
 
-## 项目结构
 
-```text
-.
-|-- public/
-|-- src/
-|-- src-tauri/
-|   |-- icons/
-|   |-- src/
-|   |-- build.rs
-|   |-- Cargo.toml
-|   `-- tauri.conf.json
-|-- .github/
-|   `-- workflows/
-|-- package.json
-`-- README.md
-```
+## GitHub Actions 自动安装包
 
-## 安全说明
+推送 `main`、提交 PR 或手动运行 [Desktop installers](https://github.com/XingAur/disk-cleaner/actions/workflows/ci.yml) 会执行类型检查、前端逻辑测试、Rust 回归测试并打包。
 
-本工具会请求管理员权限，并对用户确认的项目执行永久删除。请在执行清理前确认选中的卡片范围，尤其是 Windows.old、回收站、系统缓存、大文件和旧下载项。
+- `disk-cleaner-windows-x64`：NSIS 安装器、Windows 便携 EXE 与 SHA256 校验文件。
+- `disk-cleaner-macos-universal`：同时包含 arm64 / x86_64 的 DMG、保留应用资源的 `.app.zip` 与 SHA256 校验文件。CI 检查两种架构及 ad-hoc 签名。
 
-管理员权限可以提升系统目录清理成功率，但无法删除正在被系统或应用占用的文件。这类文件会跳过、在清理结果中显示，并在清理后的重新扫描中继续显示。
-
-清理命令不会信任前端传回的文件路径。应用会先保存最近一次扫描计划，清理时前端只提交项目 ID，后端只会从扫描计划中的已知项目里解析要删除的文件。
-
-## 发布
-
-推荐使用 GitHub Release 分发免安装 EXE。发布前至少执行：
-
-```bash
-npm run verify
-npm run tauri:build
-```
-
-便携 EXE 使用 `src-tauri/target/release/disk-cleaner-tauri.exe`，上传到 Release 时建议命名为 `disk-cleaner-portable.exe`。
-
-CI 会在 Windows 环境中执行依赖安装、类型检查、前端构建、Rust 测试和 Tauri 构建，并上传便携 EXE 与 NSIS 安装包作为 artifacts。
-
-## 上传仓库前
-
-以下内容属于可再生成内容，已通过 `.gitignore` 排除：
-
-- `node_modules/`
-- `dist/`
-- `src-tauri/target/`
-- `dist-exe/`
-- `.worktrees/`
-- 安装包和其他临时 EXE
+打开对应成功运行的 Artifacts 下载，保留 30 天。将来推送 `v*` 版本标签时，在两个系统构建成功后自动创建 GitHub Release 并上传安装包；普通 main 推送仅生成 Artifacts。

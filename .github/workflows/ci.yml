@@ -1,55 +1,110 @@
-name: CI
+name: Desktop installers
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: ["main"]
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  verify-and-build:
-    runs-on: windows-latest
-
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            args: --bundles nsis
+            artifact: disk-cleaner-windows-x64
+          - name: macOS Universal (Intel + Apple Silicon)
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles app,dmg
+            artifact: disk-cleaner-macos-universal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npm run check
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Run Rust tests
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install macOS compilation targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Canonicalize macOS test temporary directory
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "TMPDIR=$(cd "$TMPDIR" && pwd -P)/" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.artifact }}
+      - run: npm ci
+      - name: Check types and UI logic
+        run: npm run check && npm test
+      - name: Rust regression tests
         run: npm run test:rust
-
-      - name: Build Tauri app
-        run: npm run tauri:build
-
-      - name: Upload portable executable
-        uses: actions/upload-artifact@v4
+      - name: Build installers
+        run: npm run tauri:build -- ${{ matrix.args }}
+      - name: Collect Windows installer and portable executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path packages -Force | Out-Null
+          Copy-Item -LiteralPath src-tauri/target/release/disk-cleaner-tauri.exe -Destination packages/disk-cleaner-windows-x64-portable.exe
+          $installers = @(Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter *.exe)
+          if ($installers.Count -ne 1) { throw "Expected one Windows installer" }
+          Copy-Item -LiteralPath $installers[0].FullName -Destination packages/disk-cleaner-windows-x64-setup.exe
+      - name: Verify and collect Universal macOS installer
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p packages
+          bundle="src-tauri/target/universal-apple-darwin/release/bundle"
+          app="$bundle/macos/磁盘管家.app"
+          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/disk-cleaner-tauri"
+          codesign --verify --deep --strict "$app"
+          cp "$bundle"/dmg/*.dmg packages/disk-cleaner-macos-universal.dmg
+          ditto -c -k --sequesterRsrc --keepParent "$app" packages/disk-cleaner-macos-universal.app.zip
+      - name: Write package checksums
+        shell: bash
+        run: |
+          node --input-type=module -e 'import {readdirSync,readFileSync,writeFileSync} from "node:fs"; import {createHash} from "node:crypto"; const files=readdirSync("packages").sort(); writeFileSync("packages/SHA256SUMS.txt",files.map(f=>createHash("sha256").update(readFileSync("packages/"+f)).digest("hex")+"  "+f).join("\n")+"\n");'
+      - uses: actions/upload-artifact@v4
         with:
-          name: disk-cleaner-windows
-          path: src-tauri/target/release/disk-cleaner-tauri.exe
+          name: ${{ matrix.artifact }}
+          path: packages/*
           if-no-files-found: error
+          retention-days: 30
 
-      - name: Upload NSIS installer
-        uses: actions/upload-artifact@v4
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          name: disk-cleaner-windows-installer
-          path: src-tauri/target/release/bundle/nsis/*
-          if-no-files-found: warn
+          path: packages
+      - name: Publish installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+            packages/disk-cleaner-windows-x64/*.exe \
+            packages/disk-cleaner-macos-universal/*.dmg \
+            packages/disk-cleaner-macos-universal/*.zip

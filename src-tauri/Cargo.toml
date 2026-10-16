@@ -1,7 +1,7 @@
 [package]
 name = "disk-cleaner-tauri"
-version = "1.0.1"
-description = "C盘清理助手"
+version = "1.2.0"
+description = "磁盘管家：AI 与系统空间盘点及人工审核清理"
 authors = ["xyj"]
 edition = "2021"
 
@@ -20,15 +20,22 @@ tauri-build = { version = "=2.0.0", features = [] }
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "=2.0.0", features = [] }
+tauri = { version = "=2.0.0", features = ["tray-icon"] }
 tauri-runtime = "=2.0.0"
 tauri-runtime-wry = "=2.0.0"
 tauri-utils = "=2.0.0"
 uuid = "=1.8.0"
 walkdir = "2.5"
 
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.61.2"
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Storage_FileSystem", "Win32_UI_Shell"] }
+
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+trash = "5.2.9"
 
 [features]
 default = ["custom-protocol"]

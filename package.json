@@ -1,17 +1,19 @@
 {
   "name": "disk-cleaner-tauri",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "sync:ui": "node scripts/sync-coolove-ui.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "check": "vue-tsc --noEmit",
     "build": "vue-tsc --noEmit && vite build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test:rust": "cd src-tauri && cargo test --lib",
-    "verify": "npm run check && npm run build && npm run test:rust"
+    "verify": "npm run check && npm test && npm run build && npm run test:rust"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
