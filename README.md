@@ -22,12 +22,15 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 | 来源 | 内容 | 处理边界 |
 | --- | --- | --- |
 | Codex | sessions、archived_sessions、log、tmp，以及顶层配置/状态文件 | 会话需审核；凭据、配置、状态数据库禁止处理 |
-| Claude Code | projects、debug | 会话需审核；调试日志列为候选 |
+| Claude Code | projects、debug、shell-snapshots | 会话需审核；调试日志与终端快照列为候选 |
 | Cursor | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 缓存列为候选；应用状态禁止整体处理 |
+| Windsurf | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 同 Cursor：缓存列为候选；聊天与应用状态禁止整体处理 |
+| VS Code | Cache、CachedData、Code Cache、GPUCache，以及 `.vscode/extensions` | 缓存列为候选；扩展（含 AI 插件）需审核 |
 | Ollama | `.ollama/models`，支持 `OLLAMA_MODELS` | 默认保护，建议优先用 `ollama rm` 管理模型 |
 | ComfyUI | 用户目录/文档目录下的 ComfyUI，或手动登记安装根目录 | output、models 默认保护；temp 为临时内容 |
 | Hugging Face / LM Studio | 常见模型目录 | 默认保护；含链接的目录禁止整体处理 |
-| Python / Node.js | pip 下载缓存、npm 内容缓存 | 不扫描项目环境、node_modules 或虚拟环境 |
+| ModelScope / PyTorch | `.cache/modelscope/hub`、`.cache/torch/hub` | 默认保护，需要时重新下载 |
+| Python / Node.js | pip 下载缓存、uv 缓存、conda 包缓存（miniconda3 / anaconda3 的 pkgs）、npm 内容缓存、pnpm store、Yarn 缓存 | pip、uv、npm、Yarn 缓存列为候选；conda pkgs 与 pnpm store 需审核（建议优先用 conda clean / pnpm store prune）；不扫描项目环境、node_modules 或虚拟环境 |
 | Chrome / Edge | 默认用户配置的常见缓存目录 | 关闭浏览器后审核 |
 | Windows | 用户临时目录、Windows Temp、CrashDumps、Windows.old、更新下载目录 | 临时内容可审核；Windows.old、更新缓存通过 Windows 存储设置管理 |
 | 下载与自定义目录 | Downloads 直接子项，或人工登记目录的直接子项 | 默认保护，可用大小筛选找大文件 |

@@ -50,6 +50,51 @@ fn rules_keep_chats_models_and_outputs_protected() {
         .filter(|r| ["chat", "model", "output"].contains(&r.category.as_str()))
         .all(|r| r.protection != Protection::Safe));
 }
+#[test]
+fn ai_tool_and_package_cache_rules_follow_protection_levels() {
+    let roots = rules::Roots {
+        home: "C:/test".into(),
+        local: "C:/local".into(),
+        roaming: "C:/roaming".into(),
+        windows: "C:/Windows".into(),
+        temp: "C:/temp".into(),
+    };
+    let all = rules::default_rules(&roots);
+    let find = |source: &str, tail: &str| {
+        all.iter()
+            .find(|r| r.source == source && r.path.ends_with(tail))
+            .unwrap_or_else(|| panic!("missing rule {source} {tail}"))
+    };
+    for source in [
+        "Windsurf",
+        "VS Code",
+        "ModelScope",
+        "PyTorch",
+        "Python / uv",
+        "Python / conda",
+        "Node.js / Yarn",
+    ] {
+        assert!(all.iter().any(|r| r.source == source), "{source}");
+    }
+    // 聊天与应用状态禁止整体处理，模型与扩展需要审核，缓存可直接处理
+    assert_eq!(
+        find("Windsurf", "workspaceStorage").protection,
+        Protection::Blocked
+    );
+    assert_eq!(
+        find("Windsurf", "globalStorage").protection,
+        Protection::Blocked
+    );
+    assert_eq!(find("VS Code", "extensions").protection, Protection::Review);
+    assert_eq!(find("ModelScope", "hub").protection, Protection::Review);
+    assert_eq!(find("PyTorch", "hub").protection, Protection::Review);
+    assert_eq!(
+        find("Python / conda", "pkgs").protection,
+        Protection::Review
+    );
+    assert_eq!(find("VS Code", "CachedData").protection, Protection::Safe);
+    assert_eq!(find("Claude Code", "shell-snapshots").category, "cache");
+}
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_rules_use_library_caches_and_exclude_windows_system_rules() {
@@ -63,6 +108,8 @@ fn macos_rules_use_library_caches_and_exclude_windows_system_rules() {
     assert!(all
         .iter()
         .any(|rule| rule.path == r.home.join(".npm/_cacache")));
+    assert!(all.iter().any(|rule| rule.path == r.home.join(".cache/uv")));
+    assert!(!all.iter().any(|rule| rule.path == r.local.join("uv/cache")));
 }
 #[cfg(target_os = "macos")]
 #[test]

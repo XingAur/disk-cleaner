@@ -1155,7 +1155,7 @@ onUnmounted(() => {
       </div>
       <template v-if="settingsTab === 'roots'"
         ><p class="settings-copy">
-          自动识别 Codex、Claude Code、Cursor、Ollama、ComfyUI
+          自动识别 Codex、Claude Code、Cursor、Windsurf、VS Code、Ollama、ComfyUI、Hugging Face、ModelScope
           等工具的常见目录，并纳入系统临时文件、下载和应用缓存。自定义安装路径可在下方登记。
         </p>
         <div class="cl-alert">
