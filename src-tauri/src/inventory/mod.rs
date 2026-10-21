@@ -1,4 +1,5 @@
 pub mod model;
+pub mod ollama;
 pub mod platform;
 #[cfg(windows)]
 mod recycle_sink;
@@ -23,6 +24,8 @@ use std::{
 pub struct Entry {
     pub item: Item,
     pub snapshot: Option<Snapshot>,
+    /// Ollama 模型：清单之外还要处理的、只被它引用的数据块
+    pub ollama: Option<ollama::Parts>,
 }
 #[derive(Default, Clone)]
 pub struct Plan {
@@ -115,7 +118,52 @@ fn make_entry(rule: &Rule, path: PathBuf, cancel: &AtomicBool) -> Entry {
     Entry {
         item,
         snapshot: snap,
+        ollama: None,
     }
+}
+
+/// Ollama 的 models 目录按模型拆开；不是标准布局时返回 None，按整个目录处理。
+fn ollama_entries(rule: &Rule, cancel: &AtomicBool) -> Option<Vec<Entry>> {
+    if rule.source != "Ollama" || rule.category != "model" {
+        return None;
+    }
+    let models = ollama::models(&rule.path);
+    if models.is_empty() {
+        return None;
+    }
+    let entries = models
+        .into_iter()
+        .map(|model| {
+            let mut entry = make_entry(rule, model.manifest.clone(), cancel);
+            let item = &mut entry.item;
+            item.name = model.name.clone();
+            item.size_bytes = model.own_bytes;
+            item.file_count = model.own.len() as u64 + 1;
+            item.evidence = "Ollama 模型清单 · 按清单引用判断数据块归属".into();
+            let shared = if model.shared > 0 {
+                format!(
+                    "与其他模型共用的 {} 个数据块会保留（模型共 {}）；",
+                    model.shared,
+                    ollama::format_bytes(model.total_bytes)
+                )
+            } else {
+                String::new()
+            };
+            item.impact = format!(
+                "卸载模型 {}：删除它的清单和只被它使用的 {} 个数据块，与 ollama rm 一致，约 {}；{}需要时重新 ollama pull。",
+                model.name,
+                model.own.len(),
+                ollama::format_bytes(model.own_bytes),
+                shared
+            );
+            entry.ollama = Some(ollama::Parts {
+                root: rule.path.clone(),
+                blobs: model.own,
+            });
+            entry
+        })
+        .collect();
+    Some(entries)
 }
 
 pub fn scan(
@@ -148,6 +196,22 @@ pub fn scan(
         if fs::symlink_metadata(&rule.path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
         {
             continue;
+        }
+        if !overlaps(&paths, &rule.path) {
+            if let Some(entries) = ollama_entries(&rule, cancel) {
+                for entry in entries {
+                    if let Some(parts) = &entry.ollama {
+                        for blob in &parts.blobs {
+                            paths.insert(key(blob));
+                        }
+                    }
+                    paths.insert(key(&entry.item.path));
+                    items.push(entry.item.clone());
+                    plan.entries.insert(entry.item.id.clone(), entry);
+                }
+                paths.insert(key(&rule.path));
+                continue;
+            }
         }
         let targets = if rule.category == "large" && snapshot::safe_path(&rule.path).is_ok() {
             let mut list = vec![];
@@ -312,28 +376,24 @@ pub fn cleanup(
             completed: i,
             total: selected.len(),
         });
-        let result = (|| {
+        let result = (|| -> Result<u64, String> {
             let fresh = snapshot::inspect(&entry.item.path, &AtomicBool::new(false))?;
             if Some(&fresh) != entry.snapshot.as_ref() {
                 return Err("内容已变化，请重新扫描".into());
             }
-            match request.mode {
-                DeleteMode::Recycle => platform::recycle(&entry.item.path),
-                DeleteMode::Permanent => if entry.item.is_dir {
-                    fs::remove_dir_all(&entry.item.path)
-                } else {
-                    fs::remove_file(&entry.item.path)
-                }
-                .map_err(|e| e.to_string()),
+            match &entry.ollama {
+                Some(parts) => remove_ollama_model(entry, parts, request.mode),
+                None => remove(&entry.item.path, entry.item.is_dir, request.mode)
+                    .map(|()| entry.item.size_bytes),
             }
         })();
         match result {
-            Ok(()) => {
+            Ok(bytes) => {
                 report.completed_ids.push(entry.item.id.clone());
                 if request.mode == DeleteMode::Recycle {
-                    report.recycled_bytes += entry.item.size_bytes;
+                    report.recycled_bytes += bytes;
                 } else {
-                    report.deleted_bytes += entry.item.size_bytes;
+                    report.deleted_bytes += bytes;
                 }
             }
             Err(e) => report
@@ -347,6 +407,47 @@ pub fn cleanup(
         total: selected.len(),
     });
     Ok(report)
+}
+
+fn remove(path: &Path, is_dir: bool, mode: DeleteMode) -> Result<(), String> {
+    match mode {
+        DeleteMode::Recycle => platform::recycle(path),
+        DeleteMode::Permanent => if is_dir {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        }
+        .map_err(|e| e.to_string()),
+    }
+}
+
+/// 先删清单（模型从 ollama list 里消失），再删现在仍只被它引用的数据块。
+fn remove_ollama_model(
+    entry: &Entry,
+    parts: &ollama::Parts,
+    mode: DeleteMode,
+) -> Result<u64, String> {
+    let blobs = ollama::still_unshared(&parts.root, &entry.item.path, &parts.blobs);
+    let size = |p: &Path| fs::symlink_metadata(p).map(|m| m.len()).unwrap_or(0);
+    let mut bytes = size(&entry.item.path);
+    remove(&entry.item.path, false, mode)?;
+    let mut failed = vec![];
+    for blob in &blobs {
+        let blob_bytes = size(blob);
+        match snapshot::safe_path(blob).and_then(|()| remove(blob, false, mode)) {
+            Ok(()) => bytes += blob_bytes,
+            Err(e) => failed.push(format!("{}：{e}", blob.display())),
+        }
+    }
+    if failed.is_empty() {
+        Ok(bytes)
+    } else {
+        Err(format!(
+            "模型清单已移除，{} 个数据块未处理（{}）",
+            failed.len(),
+            failed.join("；")
+        ))
+    }
 }
 
 pub fn browse(plan: &mut Plan, id: &str) -> Result<Vec<Item>, String> {

@@ -345,3 +345,120 @@ fn junctions_never_allow_outside_tree_cleanup() {
     fs::remove_dir(&link).unwrap();
     assert!(outside.path().join("keep.txt").exists());
 }
+fn ollama_fixture() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("models");
+    let lib = root.join("manifests/registry.ollama.ai/library");
+    fs::create_dir_all(lib.join("qwen2.5")).unwrap();
+    fs::create_dir_all(lib.join("llama3.2")).unwrap();
+    fs::create_dir_all(root.join("blobs")).unwrap();
+    let digest = |c: char| std::iter::repeat(c).take(64).collect::<String>();
+    for (c, size) in [('a', 100), ('b', 40), ('c', 7)] {
+        fs::write(
+            root.join(format!("blobs/sha256-{}", digest(c))),
+            vec![0u8; size],
+        )
+        .unwrap();
+    }
+    // a 只属于 qwen2.5，b 只属于 llama3.2，c（许可证之类）两者共用
+    let manifest = |own: char| {
+        format!(
+            r#"{{"config":{{"digest":"sha256:{}"}},"layers":[{{"digest":"sha256:{}"}}]}}"#,
+            digest('c'),
+            digest(own)
+        )
+    };
+    fs::write(lib.join("qwen2.5/14b"), manifest('a')).unwrap();
+    fs::write(lib.join("llama3.2/3b"), manifest('b')).unwrap();
+    (dir, root)
+}
+fn ollama_rule(root: &Path) -> Rule {
+    Rule {
+        source: "Ollama".into(),
+        ..rule(root, Protection::Review, "model")
+    }
+}
+#[test]
+fn ollama_helpers_parse_digests_and_names() {
+    let hex = "AB".repeat(32);
+    assert_eq!(
+        ollama::digests(&format!("x sha256:{hex} sha256:{hex} sha256:123")),
+        vec![format!("sha256-{}", hex.to_lowercase())]
+    );
+    let parts = |s: &str| s.split('/').map(String::from).collect::<Vec<_>>();
+    assert_eq!(
+        ollama::model_name(&parts("registry.ollama.ai/library/qwen2.5/14b")),
+        "qwen2.5:14b"
+    );
+    assert_eq!(
+        ollama::model_name(&parts("registry.ollama.ai/me/tool/latest")),
+        "me/tool:latest"
+    );
+    assert_eq!(
+        ollama::model_name(&parts("hf.co/org/repo/q4")),
+        "hf.co/org/repo:q4"
+    );
+}
+#[test]
+fn ollama_models_are_listed_per_model_without_shared_blobs() {
+    let (_dir, root) = ollama_fixture();
+    let (inv, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let names: Vec<_> = inv.items.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names.len(), 2);
+    let qwen = inv.items.iter().find(|i| i.name == "qwen2.5:14b").unwrap();
+    let manifest_len = fs::metadata(&qwen.path).unwrap().len();
+    assert_eq!(qwen.size_bytes, 100 + manifest_len);
+    assert_eq!(qwen.protection, Protection::Review);
+    assert!(!qwen.permanent_allowed);
+    assert!(qwen.impact.contains("共用的 1 个数据块会保留"));
+    let parts = plan.entries[&qwen.id].ollama.clone().unwrap();
+    assert_eq!(parts.blobs.len(), 1);
+    assert!(parts.blobs[0].ends_with(format!("sha256-{}", "a".repeat(64))));
+    // 整个 models 目录不会再作为一项出现
+    assert!(inv.items.iter().all(|i| i.path != root));
+}
+#[test]
+fn removing_an_ollama_model_keeps_blobs_other_models_use() {
+    let (_dir, root) = ollama_fixture();
+    let (inv, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let qwen = inv.items.iter().find(|i| i.name == "qwen2.5:14b").unwrap();
+    let entry = &plan.entries[&qwen.id];
+    // 扫描之后又拉取了一个也用到 a 的模型：a 不能再删
+    let a = format!("sha256:{}", "a".repeat(64));
+    let lib = root.join("manifests/registry.ollama.ai/library");
+    fs::create_dir_all(lib.join("qwen-new")).unwrap();
+    fs::write(
+        lib.join("qwen-new/latest"),
+        format!(r#"{{"layers":[{{"digest":"{a}"}}]}}"#),
+    )
+    .unwrap();
+    let bytes =
+        remove_ollama_model(entry, entry.ollama.as_ref().unwrap(), DeleteMode::Permanent).unwrap();
+    assert!(!qwen.path.exists());
+    assert_eq!(bytes, fs::metadata(lib.join("llama3.2/3b")).unwrap().len());
+    for c in ['a', 'b', 'c'] {
+        assert!(root
+            .join(format!("blobs/sha256-{}", c.to_string().repeat(64)))
+            .exists());
+    }
+    // 再卸载 llama3.2：b 和（现在只剩它在用的）c 一起删，qwen-new 用的 a 保留
+    let (inv, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let llama = inv.items.iter().find(|i| i.name == "llama3.2:3b").unwrap();
+    let entry = &plan.entries[&llama.id];
+    remove_ollama_model(entry, entry.ollama.as_ref().unwrap(), DeleteMode::Permanent).unwrap();
+    let blob = |c: char| root.join(format!("blobs/sha256-{}", c.to_string().repeat(64)));
+    assert!(blob('a').exists());
+    assert!(!blob('b').exists());
+    assert!(!blob('c').exists());
+}
+#[test]
+fn ollama_directory_without_manifests_is_kept_as_one_item() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("models");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("model.gguf"), "weights").unwrap();
+    let (inv, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    assert_eq!(inv.items.len(), 1);
+    assert_eq!(inv.items[0].path, root);
+    assert!(plan.entries[&inv.items[0].id].ollama.is_none());
+}

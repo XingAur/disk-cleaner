@@ -26,7 +26,7 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 | Cursor | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 缓存列为候选；应用状态禁止整体处理 |
 | Windsurf | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 同 Cursor：缓存列为候选；聊天与应用状态禁止整体处理 |
 | VS Code | Cache、CachedData、Code Cache、GPUCache，以及 `.vscode/extensions` | 缓存列为候选；扩展（含 AI 插件）需审核 |
-| Ollama | `.ollama/models`，支持 `OLLAMA_MODELS` | 默认保护，建议优先用 `ollama rm` 管理模型 |
+| Ollama | `.ollama/models`，支持 `OLLAMA_MODELS`；按清单逐个列出模型 | 默认保护；卸载一个模型只删除它的清单和只被它使用的数据块（与 `ollama rm` 一致），与其他模型共用的数据块保留；不是标准布局时整个目录作为一项 |
 | ComfyUI | 用户目录/文档目录下的 ComfyUI，或手动登记安装根目录 | output、models 默认保护；temp 为临时内容 |
 | Hugging Face / LM Studio | 常见模型目录 | 默认保护；含链接的目录禁止整体处理 |
 | ModelScope / PyTorch | `.cache/modelscope/hub`、`.cache/torch/hub` | 默认保护，需要时重新下载 |

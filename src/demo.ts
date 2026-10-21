@@ -2,12 +2,28 @@ import type { Inventory, Item } from "./domain";
 const gib = 1024 ** 3;
 const samples = [
   [
-    "models",
+    "qwen2.5:14b",
     "Ollama",
     "model",
-    12.4,
+    8.4,
     "review",
-    "C:\\Users\\Demo\\.ollama\\models",
+    "C:\\Users\\Demo\\.ollama\\models\\manifests\\registry.ollama.ai\\library\\qwen2.5\\14b",
+  ],
+  [
+    "llama3.2:3b",
+    "Ollama",
+    "model",
+    1.9,
+    "review",
+    "C:\\Users\\Demo\\.ollama\\models\\manifests\\registry.ollama.ai\\library\\llama3.2\\3b",
+  ],
+  [
+    "Cache",
+    "Windsurf",
+    "cache",
+    0.64,
+    "safe",
+    "C:\\Users\\Demo\\AppData\\Roaming\\Windsurf\\Cache",
   ],
   ["output", "ComfyUI", "output", 3.6, "review", "D:\\ComfyUI\\output"],
   [
@@ -115,11 +131,13 @@ export function demoInventory(): Inventory {
             ? "来源未知 · 仅根据下载目录分类"
             : `已知目录规则 · ${source}（仅目录关联）`,
         impact:
-          category === "model"
-            ? "删除后需要重新下载模型，依赖该模型的任务将无法运行。建议先在应用内按模型卸载。"
-            : protection === "safe"
-              ? "关闭相关应用后可以重建缓存；首次启动或下载可能变慢。"
-              : "可能包含会话、项目状态或生成成果，请先检查内容并备份。",
+          source === "Ollama"
+            ? `卸载模型 ${name}：删除它的清单和只被它使用的数据块，与 ollama rm 一致；与其他模型共用的数据块会保留。`
+            : category === "model"
+              ? "删除后需要重新下载模型，依赖该模型的任务将无法运行。建议先在应用内按模型卸载。"
+              : protection === "safe"
+                ? "关闭相关应用后可以重建缓存；首次启动或下载可能变慢。"
+                : "可能包含会话、项目状态或生成成果，请先检查内容并备份。",
         protectionReason:
           protection === "blocked"
             ? "包含数据库或系统运行状态，请在应用内管理"
@@ -127,7 +145,7 @@ export function demoInventory(): Inventory {
               ? "默认保护，请先核对内容与删除影响"
               : "已知缓存或临时目录",
         fileCount: 24 + i * 47,
-        isDir: !name.endsWith(".zip"),
+        isDir: !name.endsWith(".zip") && source !== "Ollama",
         modifiedMs: Date.now() - i * 86400000,
         permanentAllowed: category === "temp",
         complete: true,
