@@ -15,11 +15,12 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 
 ## 系统毛玻璃（实验）
 
-「外观主题」里可以打开系统毛玻璃：由系统模糊窗口后面的桌面，界面按「色调浓度」叠一层主题颜色。默认关闭，关闭时外观与以前一致。
+「外观主题」里可以请求系统毛玻璃：由系统模糊窗口后面的桌面，界面按「色调浓度」叠一层主题颜色。默认关闭，关闭时页面恢复不透明背景；透明原生窗口的边角和拖动表现仍需实机确认。
 
 - 自动：Windows 11 用 Acrylic，Windows 10 用 Blur，macOS 用系统毛玻璃；也可以手动选 Acrylic、Mica（仅 Windows 11，取桌面壁纸颜色）或 Blur。
 - Windows 10 与 Windows 11 早期版本上 Acrylic 拖动、缩放窗口时可能卡顿，Blur 在 Windows 11 22H2 起有同样问题；遇到卡顿换一种效果或关闭即可。
-- 系统不支持所选效果时自动保持普通外观。为此窗口改为透明窗口，macOS 打开了 `macOSPrivateApi`。
+- 明确不支持的平台或接口调用报错时恢复普通外观；接口成功不保证系统实际应用了效果。窗口已改为透明窗口，macOS 打开了 `macOSPrivateApi` 及配套 Rust feature。
+- 快速开启后立即关闭存在旧异步请求覆盖新状态的已知问题。Windows / macOS 原生视觉效果尚未验收，新配置尚需在 macOS 完成构建验证；暂建议保持默认关闭。
 
 ## 图标与托盘
 
@@ -34,7 +35,7 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 | Cursor | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 缓存列为候选；应用状态禁止整体处理 |
 | Windsurf | Cache、Code Cache、GPUCache、workspaceStorage、globalStorage | 同 Cursor：缓存列为候选；聊天与应用状态禁止整体处理 |
 | VS Code | Cache、CachedData、Code Cache、GPUCache，以及 `.vscode/extensions` | 缓存列为候选；扩展（含 AI 插件）需审核 |
-| Ollama | `.ollama/models`，支持 `OLLAMA_MODELS`；按清单逐个列出模型 | 默认保护；卸载一个模型只删除它的清单和只被它使用的数据块（与 `ollama rm` 一致），与其他模型共用的数据块保留；不是标准布局时整个目录作为一项 |
+| Ollama | `.ollama/models`，支持 `OLLAMA_MODELS`；按清单逐个列出模型 | 默认保护；按模型清单分析共享数据块，执行时复查引用；存在下述已知限制，当前建议使用 `ollama rm` 管理模型；不是标准布局时整个目录作为一项 |
 | ComfyUI | 用户目录/文档目录下的 ComfyUI，或手动登记安装根目录 | output、models 默认保护；temp 为临时内容 |
 | Hugging Face / LM Studio | 常见模型目录 | 默认保护；含链接的目录禁止整体处理 |
 | ModelScope / PyTorch | `.cache/modelscope/hub`、`.cache/torch/hub` | 默认保护，需要时重新下载 |
@@ -49,6 +50,10 @@ macOS 使用 HOME、Library/Caches、Library/Application Support、用户临时�
 目录规则只表示关联，不证明是谁创建了文件。不解析聊天正文推断作者；没有证据的内容保持未知或人工登记标记。不承诺覆盖所有安装渠道与版本。
 
 「登记目录」支持 API / 自写脚本输出、普通未知目录、ComfyUI 安装根目录，最多 32 个。登记和外观偏好保存在本机 WebView 存储中；扫描内容与清理清单仅保存在内存，不写清理日志，不上传文件。
+
+### Ollama 按模型清理的已知限制
+
+当前实现跳过读取失败的模型清单，可能将共享数据块错误判断为独占；在修复前请使用 `ollama rm` 卸载模型。共享数据块也不会计入每个模型的独占体积，同时删除所有引用模型时可能遗留共享块，所以列表总量不能代表完整模型目录大小或最终可释放空间。
 
 ## 安全边界
 
