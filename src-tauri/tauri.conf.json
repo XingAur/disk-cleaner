@@ -20,10 +20,11 @@
         "minHeight": 640,
         "resizable": true,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "center": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
     }

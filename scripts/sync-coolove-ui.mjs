@@ -6,6 +6,7 @@ await mkdir(destination, { recursive: true });
 for (const [from, to] of [
   ["coolove-ui.css", "coolove-ui.css"],
   ["vue/useCooloveTheme.ts", "useCooloveTheme.ts"],
+  ["tauri/nativeGlass.ts", "nativeGlass.ts"],
 ]) {
   await copyFile(new URL(from, source), new URL(to, destination));
 }

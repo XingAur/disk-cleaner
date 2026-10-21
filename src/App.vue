@@ -19,10 +19,14 @@ import {
 } from "./domain";
 import { demoInventory } from "./demo";
 import { themes, useTheme } from "./useTheme";
+import { NATIVE_GLASS_OPTIONS } from "./coolove-ui/nativeGlass";
 
 const native = "__TAURI_INTERNALS__" in window;
 const macOS = navigator.platform.includes("Mac");
-const { theme, dispose } = useTheme();
+const { theme, glass, glassActive, tint, dispose } = useTheme();
+const glassHint = computed(
+  () => NATIVE_GLASS_OPTIONS.find((o) => o.value === glass.value)?.hint ?? "",
+);
 const inventory = ref<Inventory | null>(native ? null : demoInventory());
 const registry = ref(new Map<string, Item>());
 const phase = ref<"idle" | "scan" | "clean" | "browse">("idle");
@@ -1124,7 +1128,7 @@ onUnmounted(() => {
         >{{
           native ? "本地处理，不上传文件内容" : "演示数据 · 所有删除操作已禁用"
         }}</span
-      ><span>Coolove UI 0.5 · Disk Cleaner</span>
+      ><span>Coolove UI 0.7 · Disk Cleaner</span>
     </footer>
 
     <Modal
@@ -1233,7 +1237,39 @@ onUnmounted(() => {
             :checked="theme === 'system'"
             @change="theme = theme === 'system' ? 'light' : 'system'"
           />跟随系统外观</label
-        ></template
+        >
+        <div class="native-glass">
+          <label
+            >系统毛玻璃（实验）<select
+              v-model="glass"
+              class="cl-select"
+              :disabled="!native"
+            >
+              <option
+                v-for="o in NATIVE_GLASS_OPTIONS"
+                :key="o.value"
+                :value="o.value"
+              >
+                {{ o.label }}
+              </option>
+            </select></label
+          >
+          <label v-if="glassActive"
+            >色调浓度 {{ Math.round(tint * 100) }}%<input
+              v-model.number="tint"
+              type="range"
+              min="0.4"
+              max="0.95"
+              step="0.01"
+          /></label>
+          <small>{{
+            !native
+              ? "仅桌面版可用：由系统模糊窗口后面的桌面。"
+              : glass !== "off" && !glassActive
+                ? "当前系统不支持所选效果，已保持普通外观。"
+                : glassHint
+          }}</small>
+        </div></template
       >
       <template #footer
         ><button class="cl-btn cl-btn--primary" @click="modal = null">

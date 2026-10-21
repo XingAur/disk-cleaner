@@ -39,6 +39,8 @@ export interface CooloveTheme {
   trend: 'cn' | 'intl'
   /** solid = 浮层不透明（原版），glass = 浮层也半透明 */
   overlay: 'solid' | 'glass'
+  /** css = 窗口自己做 CSS 模糊，native = 系统毛玻璃（配合 tauri/nativeGlass.ts） */
+  glass: 'css' | 'native'
   fontFamily?: string
 }
 
@@ -52,7 +54,8 @@ export const COOLOVE_DEFAULTS: CooloveTheme = {
   radius: 1,
   density: 'comfortable',
   trend: 'cn',
-  overlay: 'solid'
+  overlay: 'solid',
+  glass: 'css'
 }
 
 function hexToTriplet(hex: string): string | null {
@@ -70,6 +73,8 @@ export function applyCooloveTheme(partial: Partial<CooloveTheme>, el: HTMLElemen
   el.setAttribute('data-density', t.density)
   el.setAttribute('data-trend', t.trend)
   el.setAttribute('data-overlay', t.overlay)
+  if (t.glass === 'native') el.setAttribute('data-glass', 'native')
+  else el.removeAttribute('data-glass')
 
   const s = el.style
   s.setProperty('--bg-opacity', String(clamp(t.opacity, 0, 1)))

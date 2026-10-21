@@ -14,6 +14,13 @@ body {
   color: var(--text-primary);
   background: var(--solid-bg);
 }
+/* 系统毛玻璃：网页底色透明，由窗口按 --bg-opacity 叠主题色调 */
+html[data-glass="native"] body {
+  background: transparent;
+}
+html[data-glass="native"] .app-shell {
+  background: var(--window-bg);
+}
 button,
 input,
 select {
@@ -981,6 +988,28 @@ h1 {
 }
 .registration-form button {
   justify-self: start;
+}
+.native-glass {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider-color);
+}
+.native-glass label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+.native-glass input[type="range"] {
+  accent-color: var(--accent);
+}
+.native-glass small {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
 }
 .theme-grid {
   display: grid;

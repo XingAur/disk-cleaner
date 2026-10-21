@@ -3,5 +3,5 @@
   "identifier": "main",
   "description": "Main window permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:default"]
+  "permissions": ["core:default", "core:window:default", "core:window:allow-set-effects"]
 }

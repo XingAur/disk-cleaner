@@ -13,6 +13,14 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 5. 核对清单、路径与影响，默认移入 Windows 回收站或 macOS Finder 废纸篓。只有已知临时内容可以选择永久删除。
 6. 在 Windows 回收站 / Finder 废纸篓中还原或清空。**移入回收站不会立即释放空间**，展示的逻辑大小也不是实际磁盘释放量。
 
+## 系统毛玻璃（实验）
+
+「外观主题」里可以打开系统毛玻璃：由系统模糊窗口后面的桌面，界面按「色调浓度」叠一层主题颜色。默认关闭，关闭时外观与以前一致。
+
+- 自动：Windows 11 用 Acrylic，Windows 10 用 Blur，macOS 用系统毛玻璃；也可以手动选 Acrylic、Mica（仅 Windows 11，取桌面壁纸颜色）或 Blur。
+- Windows 10 与 Windows 11 早期版本上 Acrylic 拖动、缩放窗口时可能卡顿，Blur 在 Windows 11 22H2 起有同样问题；遇到卡顿换一种效果或关闭即可。
+- 系统不支持所选效果时自动保持普通外观。为此窗口改为透明窗口，macOS 打开了 `macOSPrivateApi`。
+
 ## 图标与托盘
 
 应用、安装器、macOS Dock、系统托盘和界面品牌均使用提供的蓝色章鱼图片，保留透明背景与原图比例。标题栏的「隐藏到托盘」可保留进程；点击托盘图标恢复窗口，右键菜单提供打开、隐藏、退出。关闭窗口仍按原有退出行为处理。
@@ -57,7 +65,7 @@ macOS 使用 HOME、Library/Caches、Library/Application Support、用户临时�
 
 内置晴空白、曜石黑、薄荷庭院、奶油拿铁、樱花粉、午夜蓝、紫藤夜色、深林绿及跟随系统。所有组件使用 Coolove UI token。
 
-Coolove UI 0.5.0 新增桌面侧栏、导航、工具栏、文件表格、详情栏与清单操作栏。源码在相邻的 `D:\Code\coolove-ui`，应用内的 `src/coolove-ui` 是同步副本，已纳入 Git，CI 无需相邻仓库。
+Coolove UI 0.5.0 新增桌面侧栏、导航、工具栏、文件表格、详情栏与清单操作栏；0.7.0 新增系统毛玻璃（`nativeGlass.ts`）。源码在相邻的 `D:\Code\coolove-ui`，应用内的 `src/coolove-ui` 是同步副本，已纳入 Git，CI 无需相邻仓库。
 
 修改组件库后同步：
 

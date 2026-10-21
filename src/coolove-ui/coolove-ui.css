@@ -1,5 +1,5 @@
 /*!
- * Coolove UI v0.6.0 —— 从 A+ 助手（stock-widget）提炼的可调透明度玻璃风格组件库
+ * Coolove UI v0.7.0 —— 从 A+ 助手（stock-widget）提炼的可调透明度玻璃风格组件库
  *
  * 核心理念（沿用原项目）：
  *   1. 窗口底色 = 主题底色 × --bg-opacity，配合 backdrop-filter 模糊，形成可调透明度的玻璃质感
@@ -12,6 +12,7 @@
  *   data-density="compact | comfortable" 密度（默认 comfortable）
  *   data-trend="cn | intl"               涨跌配色（默认 cn）
  *   data-overlay="solid | glass"         浮层底色（默认 solid）
+ *   data-glass="native"                  窗口用系统毛玻璃（Tauri 窗口效果），不再做 CSS 模糊
  * 再通过 CSS 变量 --bg-opacity / --glass-blur / --accent / --r 等实时调节，
  * 或直接调用 coolove-ui.js 里的 CooloveUI.applyTheme()。
  *
@@ -306,6 +307,25 @@
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-radius: var(--radius-window);
   box-shadow: var(--shadow-window), inset 0 0 0 1px rgb(var(--ink) / 0.06);
+}
+
+/* 系统毛玻璃：Tauri 打开 Acrylic / Mica / macOS vibrancy 后，在 <html>（或窗口元素）上写 data-glass="native"。
+   窗口不再自己做 CSS 模糊（它背后只有透明，模糊不到桌面），只用 --bg-opacity 在系统效果上叠一层主题色调；
+   圆角改成系统窗口的圆角（--native-radius，Windows 11 约 8px），避免系统效果从圆角外露出直角。
+   弹窗、菜单、悬浮底栏等窗口内部的浮层不受影响，仍用 CSS 模糊窗口内的内容。 */
+:root[data-glass="native"],
+[data-theme][data-glass="native"] { --radius-window: var(--native-radius, 8px); }
+[data-glass="native"] .cl-window,
+.cl-window[data-glass="native"] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 0 0 1px rgb(var(--ink) / 0.06);
+}
+/* 粘性表头原本用不透明的 --solid-bg，在系统毛玻璃上会成为一条实色带：改为同色调半透明 + 窗口内模糊 */
+[data-glass="native"] .cl-table.cl-table--files th {
+  background: rgb(var(--base-rgb) / min(1, calc(var(--bg-opacity) + 0.12)));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* 顶部一道细高光，增强玻璃边缘感 */
