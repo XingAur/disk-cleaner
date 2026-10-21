@@ -1,5 +1,5 @@
 /*!
- * Coolove UI v0.5.0 —— 从 A+ 助手（stock-widget）提炼的可调透明度玻璃风格组件库
+ * Coolove UI v0.6.0 —— 从 A+ 助手（stock-widget）提炼的可调透明度玻璃风格组件库
  *
  * 核心理念（沿用原项目）：
  *   1. 窗口底色 = 主题底色 × --bg-opacity，配合 backdrop-filter 模糊，形成可调透明度的玻璃质感
@@ -1893,6 +1893,211 @@ button.cl-tag:hover { background: var(--surface-3); color: var(--text-primary); 
   font-size: var(--fs-sm);
   font-weight: 700;
   cursor: pointer;
+}
+
+/* ============================================================
+ * 11.6 悬浮底栏（dock）
+ * 手机 App 式的悬浮玻璃胶囊：底栏导航、评论 + 操作栏。选中块在各项之间滑动，到位时过冲回弹，
+ * 移动中横向拉长；可以按住拖动，松手吸附到最近一项（拖动、拉长需要 coolove-ui.js 的 CooloveUI.dock()
+ * 或 Vue 的 useCooloveDock，只写 CSS 时仍然有滑动和回弹）。
+ *   <div class="cl-dock-area">
+ *     <nav class="cl-dock cl-dock--liquid" style="--n:5; --i:0">
+ *       <span class="cl-dock__indicator"></span>
+ *       <button class="cl-dock__item" aria-current="page"><svg/>首页</button>
+ *       <button class="cl-dock__item"><svg/>数码</button>
+ *       <button class="cl-dock__fab"><svg/></button>
+ *       …
+ *     </nav>
+ *   </div>
+ * --n 是列数（含中间的 fab），--i 是选中项所在的列（从 0 开始）。
+ * 玻璃画在 ::before 上，而不是 .cl-dock 自身：自身带 backdrop-filter 会成为“背景根”，
+ * 里面的选中块就只能看到底栏自己，看不到底栏后面的内容，液态折射也就没有东西可以折射。
+ * --liquid 的折射用 SVG 位移滤镜（backdrop-filter: url()），只有 Chromium 内核支持
+ * （Windows WebView2、安卓 WebView、Chrome / Edge）；脚本检测到支持时才写 data-liquid="on"，
+ * 其他环境保持普通磨砂。
+ * ============================================================ */
+.cl-dock-area {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0 12px max(12px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.cl-dock-area > * { pointer-events: auto; }
+.cl-dock-area[hidden] { display: none; }
+/* 限制在最近的定位父级（小部件窗口）里 */
+.cl-dock-area--contained { position: absolute; }
+
+.cl-dock {
+  --n: 5;
+  --i: 0;
+  --dock-h: 60px;
+  --dock-pad: 5px;
+  --dock-tint: rgb(var(--base-rgb) / 0.62);
+  --dock-blur: 24px;
+  --dock-hi: 0.16;               /* 顶部高光强度：深色主题弱、浅色主题强 */
+  position: relative;
+  flex: 0 1 460px;
+  min-width: 0;
+  height: var(--dock-h);
+  padding: var(--dock-pad);
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  align-items: center;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+}
+:is([data-theme="light"], [data-theme="sakura"], [data-theme="mint"], [data-theme="latte"]) .cl-dock,
+.cl-dock:is([data-theme="light"], [data-theme="sakura"], [data-theme="mint"], [data-theme="latte"]) { --dock-hi: 0.7; }
+.cl-dock::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: var(--dock-tint);
+  backdrop-filter: blur(var(--dock-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--dock-blur)) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / var(--dock-hi)),
+    inset 0 0 0 1px rgb(var(--ink) / 0.08),
+    0 12px 32px -8px rgb(0 0 0 / 0.32),
+    0 2px 6px rgb(0 0 0 / 0.08);
+  pointer-events: none;
+}
+.cl-dock > * { position: relative; z-index: 2; }
+
+/* 选中块：宽一列，用 --i 定位；translate 走弹簧曲线，scale 负责“拉长”与“按起” */
+.cl-dock > .cl-dock__indicator {
+  position: absolute;
+  z-index: 1;
+  top: var(--dock-pad);
+  bottom: var(--dock-pad);
+  left: var(--dock-pad);
+  width: calc((100% - 2 * var(--dock-pad)) / var(--n));
+  border-radius: var(--radius-pill);
+  translate: calc(var(--i) * 100%) 0;
+  background: rgb(var(--ink) / 0.075);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / var(--dock-hi)),
+    inset 0 -1px 2px rgb(var(--ink) / 0.06),
+    0 2px 10px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(3px) saturate(160%) brightness(1.04);
+  -webkit-backdrop-filter: blur(3px) saturate(160%) brightness(1.04);
+  pointer-events: none;
+  transition: translate 0.55s cubic-bezier(0.34, 1.4, 0.5, 1), scale 0.22s ease, background var(--ease);
+  transition: translate 0.6s linear(0, 0.04, 0.139, 0.273, 0.419, 0.563, 0.695, 0.809, 0.902, 0.973, 1.024, 1.057, 1.076, 1.083, 1.082, 1.075, 1.064, 1.052, 1.04, 1.029, 1.019, 1.01, 1.004, 0.999, 0.996, 0.994, 0.993, 0.993, 0.994, 0.994, 1), scale 0.22s ease, background var(--ease);
+}
+/* 切换途中：按距离横向拉长（--stretch 由脚本按跨过的列数写入） */
+.cl-dock.is-moving > .cl-dock__indicator { scale: var(--stretch, 1.25) 0.9; }
+/* 拖动中：跟手、略微放大，像被按起的一滴水 */
+.cl-dock.is-dragging > .cl-dock__indicator {
+  translate: var(--drag-x, 0px) 0;
+  scale: 1.12 1.1;
+  transition: scale 0.2s ease, background var(--ease);
+}
+.cl-dock.is-dragging { cursor: grabbing; }
+/* 没有选中项（如当前在二级页面） */
+.cl-dock[data-none] > .cl-dock__indicator { opacity: 0; }
+
+/* 液态折射：脚本检测到 Chromium 后才打开 */
+.cl-dock--liquid[data-liquid="on"] > .cl-dock__indicator {
+  background: rgb(var(--ink) / 0.035);
+  backdrop-filter: url(#cl-liquid) blur(0.6px) saturate(170%) brightness(1.06);
+}
+
+/* 选择器带上 .cl-dock，压过 .cl-scope 下原生按钮的 font: inherit 兜底 */
+.cl-dock > .cl-dock__item {
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--ease), transform 0.2s ease;
+}
+.cl-dock__item svg { width: 22px; height: 22px; flex-shrink: 0; }
+.cl-dock__item:active { transform: scale(0.92); }
+.cl-dock__item:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.cl-dock__item.is-active,
+.cl-dock__item[aria-current="page"],
+.cl-dock__item[aria-selected="true"] { color: var(--accent-text); }
+.cl-dock__item.is-on { color: var(--accent-text); }   /* 操作类：已点赞、已收藏 */
+.cl-dock__item small { font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.cl-dock__item > .cl-count { position: absolute; top: 4px; left: calc(50% + 6px); }
+
+/* 中间的主操作（发布）：强调色胶囊，不参与选中 */
+.cl-dock > .cl-dock__fab {
+  justify-self: center;
+  width: min(100% - 6px, 78px);
+  height: calc(100% - 4px);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  cursor: pointer;
+  transition: transform 0.2s ease, filter var(--ease);
+}
+.cl-dock__fab svg { width: 26px; height: 26px; }
+.cl-dock__fab:hover { filter: brightness(1.06); }
+.cl-dock__fab:active { transform: scale(0.94); }
+
+/* 评论框：整条胶囊是一个假输入框，点了再弹出真正的输入 */
+.cl-dock--field { flex: 1 1 0; min-width: 104px; grid-template-columns: minmax(0, 1fr); }
+.cl-dock > .cl-dock__field {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-lg);
+  text-align: left;
+  cursor: text;
+}
+.cl-dock__field svg { width: 20px; height: 20px; flex-shrink: 0; }
+.cl-dock__field > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 操作组：宽度随内容 */
+.cl-dock--actions { --dock-col: 52px; flex: 0 1 auto; grid-template-columns: repeat(var(--n), var(--dock-col)); }
+
+.cl-dock--sm { --dock-h: 50px; --dock-pad: 4px; }
+.cl-dock--sm.cl-dock--actions { --dock-col: 44px; }
+.cl-dock--sm > .cl-dock__field { padding: 0 14px; font-size: var(--fs-md); }
+.cl-dock--sm .cl-dock__item svg { width: 19px; height: 19px; }
+.cl-dock--sm .cl-dock__fab svg { width: 22px; height: 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-dock > .cl-dock__indicator { transition-duration: 0.01ms; }
+  .cl-dock.is-moving > .cl-dock__indicator { scale: 1; }
 }
 
 /* ============================================================
