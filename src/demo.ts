@@ -27,6 +27,14 @@ const samples = [
   ],
   ["output", "ComfyUI", "output", 3.6, "review", "D:\\ComfyUI\\output"],
   [
+    "shader-cache.bin",
+    "NVIDIA 着色器缓存",
+    "cache",
+    2.8,
+    "review",
+    "C:\\Users\\Demo\\AppData\\Local\\NVIDIA\\GLCache\\shader-cache.bin",
+  ],
+  [
     "Cache",
     "Cursor",
     "cache",
@@ -107,6 +115,13 @@ const samples = [
     "C:\\Users\\Demo\\.claude\\debug",
   ],
 ] as const;
+function demoImpact(name: string, source: string, category: Item["category"], protection: Item["protection"]): string {
+  if (source === "Ollama") return `请先退出 Ollama。卸载模型 ${name}：移除清单及仍未共享的独占数据块；共享块保守保留，列表大小不含共享块。`;
+  if (source === "NVIDIA 着色器缓存") return "着色器缓存可重建；需人工审核。请先退出游戏和图形程序，按 NVIDIA 官方流程关闭缓存并重启后处理；清理后首次运行可能重新编译或短暂卡顿。";
+  if (category === "model") return "删除后需要重新下载模型，依赖该模型的任务将无法运行。建议先在应用内按模型卸载。";
+  if (protection === "safe") return "关闭相关应用后可以重建缓存；首次启动或下载可能变慢。";
+  return "可能包含会话、项目状态或生成成果，请先检查内容并备份。";
+}
 export function demoInventory(): Inventory {
   return {
     scanId: "demo",
@@ -130,22 +145,15 @@ export function demoInventory(): Inventory {
           source === "未知"
             ? "来源未知 · 仅根据下载目录分类"
             : `已知目录规则 · ${source}（仅目录关联）`,
-        impact:
-          source === "Ollama"
-            ? `卸载模型 ${name}：删除它的清单和只被它使用的数据块，与 ollama rm 一致；与其他模型共用的数据块会保留。`
-            : category === "model"
-              ? "删除后需要重新下载模型，依赖该模型的任务将无法运行。建议先在应用内按模型卸载。"
-              : protection === "safe"
-                ? "关闭相关应用后可以重建缓存；首次启动或下载可能变慢。"
-                : "可能包含会话、项目状态或生成成果，请先检查内容并备份。",
+        impact: demoImpact(name, source, category, protection),
         protectionReason:
           protection === "blocked"
             ? "包含数据库或系统运行状态，请在应用内管理"
             : protection === "review"
               ? "默认保护，请先核对内容与删除影响"
               : "已知缓存或临时目录",
-        fileCount: 24 + i * 47,
-        isDir: !name.endsWith(".zip") && source !== "Ollama",
+        fileCount: name.endsWith(".bin") ? 1 : 24 + i * 47,
+        isDir: !name.endsWith(".zip") && !name.endsWith(".bin") && source !== "Ollama",
         modifiedMs: Date.now() - i * 86400000,
         permanentAllowed: category === "temp",
         complete: true,

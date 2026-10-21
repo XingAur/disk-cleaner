@@ -127,7 +127,17 @@ fn ollama_entries(rule: &Rule, cancel: &AtomicBool) -> Option<Vec<Entry>> {
     if rule.source != "Ollama" || rule.category != "model" {
         return None;
     }
-    let models = ollama::models(&rule.path);
+    let models = match ollama::models(&rule.path) {
+        Ok(models) => models,
+        Err(error) => {
+            let mut entry = make_entry(rule, rule.path.clone(), cancel);
+            entry.item.protection = Protection::Blocked;
+            entry.item.protection_reason = error;
+            entry.item.complete = false;
+            entry.item.permanent_allowed = false;
+            return Some(vec![entry]);
+        }
+    };
     if models.is_empty() {
         return None;
     }
@@ -135,9 +145,24 @@ fn ollama_entries(rule: &Rule, cancel: &AtomicBool) -> Option<Vec<Entry>> {
         .into_iter()
         .map(|model| {
             let mut entry = make_entry(rule, model.manifest.clone(), cancel);
+            let mut snapshots = HashMap::new();
+            for blob in &model.own {
+                match snapshot::inspect(blob, cancel) {
+                    Ok(snap) if snap.blocked.is_none() => { snapshots.insert(blob.clone(), snap); },
+                    result => {
+                        entry.item.protection = Protection::Blocked;
+                        entry.item.complete = false;
+                        entry.item.protection_reason = match result {
+                            Err(error) => error,
+                            Ok(_) => "模型块包含受保护内容".into(),
+                        };
+                    }
+                }
+            }
             let item = &mut entry.item;
             item.name = model.name.clone();
-            item.size_bytes = model.own_bytes;
+            item.size_bytes = snapshots.values().map(|s| s.bytes).sum::<u64>()
+                + entry.snapshot.as_ref().map_or(0, |s| s.bytes);
             item.file_count = model.own.len() as u64 + 1;
             item.evidence = "Ollama 模型清单 · 按清单引用判断数据块归属".into();
             let shared = if model.shared > 0 {
@@ -150,15 +175,16 @@ fn ollama_entries(rule: &Rule, cancel: &AtomicBool) -> Option<Vec<Entry>> {
                 String::new()
             };
             item.impact = format!(
-                "卸载模型 {}：删除它的清单和只被它使用的 {} 个数据块，与 ollama rm 一致，约 {}；{}需要时重新 ollama pull。",
+                "请先退出 Ollama。卸载模型 {}：移除清单及扫描时独占、处理时仍未共享的 {} 个数据块，约 {}；{}需要时重新 ollama pull。共享块保守保留，不能等同于 ollama rm 的空间回收。",
                 model.name,
                 model.own.len(),
-                ollama::format_bytes(model.own_bytes),
+                ollama::format_bytes(item.size_bytes),
                 shared
             );
             entry.ollama = Some(ollama::Parts {
                 root: rule.path.clone(),
                 blobs: model.own,
+                snapshots,
             });
             entry
         })
@@ -427,14 +453,29 @@ fn remove_ollama_model(
     parts: &ollama::Parts,
     mode: DeleteMode,
 ) -> Result<u64, String> {
-    let blobs = ollama::still_unshared(&parts.root, &entry.item.path, &parts.blobs);
+    let blobs = ollama::still_unshared(&parts.root, &entry.item.path, &parts.blobs)?;
+    let validate_blob = |blob: &PathBuf| -> Result<(), String> {
+        let expected = parts
+            .snapshots
+            .get(blob)
+            .ok_or("缺少模型块扫描快照，请重新扫描")?;
+        let fresh = snapshot::inspect(blob, &AtomicBool::new(false))?;
+        if &fresh != expected || fresh.blocked.is_some() {
+            return Err("模型块在扫描后发生变化，请重新扫描".into());
+        }
+        Ok(())
+    };
+    // 任一块变化时先拒绝整个模型，避免先删除清单再发现数据异常。
+    for blob in &blobs {
+        validate_blob(blob)?;
+    }
     let size = |p: &Path| fs::symlink_metadata(p).map(|m| m.len()).unwrap_or(0);
     let mut bytes = size(&entry.item.path);
     remove(&entry.item.path, false, mode)?;
     let mut failed = vec![];
     for blob in &blobs {
         let blob_bytes = size(blob);
-        match snapshot::safe_path(blob).and_then(|()| remove(blob, false, mode)) {
+        match validate_blob(blob).and_then(|()| remove(blob, false, mode)) {
             Ok(()) => bytes += blob_bytes,
             Err(e) => failed.push(format!("{}：{e}", blob.display())),
         }

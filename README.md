@@ -41,6 +41,8 @@ Windows 运行 `disk-cleaner-windows-x64-portable.exe`，或使用 `disk-cleaner
 | ModelScope / PyTorch | `.cache/modelscope/hub`、`.cache/torch/hub` | 默认保护，需要时重新下载 |
 | Python / Node.js | pip 下载缓存、uv 缓存、conda 包缓存（miniconda3 / anaconda3 的 pkgs）、npm 内容缓存、pnpm store、Yarn 缓存 | pip、uv、npm、Yarn 缓存列为候选；conda pkgs 与 pnpm store 需审核（建议优先用 conda clean / pnpm store prune）；不扫描项目环境、node_modules 或虚拟环境 |
 | Chrome / Edge | 默认用户配置的常见缓存目录 | 关闭浏览器后审核 |
+| NVIDIA 着色器缓存 | Local 下的 `NVIDIA/DXCache`、`NVIDIA/GLCache`、`NVIDIA Corporation/NV_Cache`，以及部分驱动版本的 LocalLow `NVIDIA/PerDriverVersion/DXCache` / `GLCache` | 需审核；只列出缓存目录直接子项，保留目录；仅允许回收，首次运行可能重新编译或卡顿 |
+| CUDA / DirectX 缓存 | `%APPDATA%/NVIDIA/ComputeCache`、`%LOCALAPPDATA%/D3DSCache` | 需审核；先退出 GPU 计算、游戏或图形程序，清理后缓存会重建；不包含模型权重或驱动安装文件 |
 | Windows | 用户临时目录、Windows Temp、CrashDumps、Windows.old、更新下载目录 | 临时内容可审核；Windows.old、更新缓存通过 Windows 存储设置管理 |
 | 下载与自定义目录 | Downloads 直接子项，或人工登记目录的直接子项 | 默认保护，可用大小筛选找大文件 |
 | 大文件 | Desktop、Documents、Videos 中至少 512 MiB 的文件，最多向下 4 层 | 保留未知来源与默认保护；不进入链接或项目元数据目录 |
@@ -53,7 +55,19 @@ macOS 使用 HOME、Library/Caches、Library/Application Support、用户临时�
 
 ### Ollama 按模型清理的已知限制
 
-当前实现跳过读取失败的模型清单，可能将共享数据块错误判断为独占；在修复前请使用 `ollama rm` 卸载模型。共享数据块也不会计入每个模型的独占体积，同时删除所有引用模型时可能遗留共享块，所以列表总量不能代表完整模型目录大小或最终可释放空间。
+读取不完整、损坏、异常摘要、链接或读取期间发生变化的模型清单现在会阻止处理，避免将共享数据块错误判断为独占；扫描后的独占模型块也会复查快照。请先退出 Ollama 再扫描和处理，文件快照不能代替对运行中模型仓库的锁定。
+
+共享数据块仍不会计入每个模型的独占体积，同时删除所有引用模型时可能遗留共享块，所以列表总量不能代表完整模型目录大小或最终可释放空间。模型仓库管理仍优先使用 `ollama rm`。
+
+### NVIDIA 着色器与 GPU 缓存
+
+Windows 扫描结果中可按来源筛选「NVIDIA 着色器缓存」「NVIDIA / CUDA」或「Windows / DirectX」，也可搜索 DXCache、GLCache、NV_Cache、ComputeCache、D3DSCache。不存在的目录不会生成条目，目录规则不等于确认当前机器的显卡型号；LocalLow 路径属于部分驱动版本惯例，不能保证覆盖所有版本或自定义缓存路径。
+
+着色器缓存不是日常必须清理的垃圾。空间紧张或排查缓存损坏时再审核；清理后游戏会重新编译，首次启动可能变慢或短暂卡顿。[NVIDIA 官方清理步骤](https://nvidia.custhelp.com/app/answers/detail/a_id/5735/)要求先在 NVIDIA App 的 Graphics → Global Settings → Shader Cache Size 关闭缓存并重启，再清理缓存内容，之后恢复 Driver Default 并重启。本工具不会修改驱动设置、结束进程或自动重启。
+
+GPU 缓存默认保护，须人工审核后加入清单，只允许移入回收站；路径含链接或扫描后发生变化时拒绝处理，因占用无法回收的文件会保留并报错。目录本身和相邻的 NVIDIA App、驱动及游戏文件保留。移入回收站后仍需清空回收站才释放空间。
+
+CUDA 默认缓存路径依据 [CUDA 环境变量文档](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html)；设置了自定义 `CUDA_CACHE_PATH` 时，可按需人工登记，并自行确认目录内容。
 
 ## 安全边界
 
@@ -100,7 +114,7 @@ Windows 便携文件输出：`src-tauri/target/release/disk-cleaner-tauri.exe`�
 
 `npm run verify` 执行 TypeScript 检查、前端交互逻辑测试、前端构建与 Rust 测试。
 
-新增测试覆盖保护审核、伪造/过期 ID、快照变化、目录去重、临时文件永久删除限制、凭据与数据库保护、目录浏览/文本预览、取消扫描、路径穿越、Windows junction 以及拒绝永久删除兜底。原 1.0 清理器仅在测试构建中保留回归参考，不再暴露桌面命令。
+新增测试覆盖保护审核、伪造/过期 ID、快照变化、目录去重、临时文件永久删除限制、凭据与数据库保护、目录浏览/文本预览、取消扫描、路径穿越、Windows junction、拒绝永久删除兜底、GPU 缓存审核及目录保留、Ollama 清单损坏/独占锁定/模型块变化时拒绝处理。原 1.0 清理器仅在测试构建中保留回归参考，不再暴露桌面命令。
 
 Windows 回收站集成测试单独运行，只将自动生成的微小测试文件移入回收站，**不清空回收站**：
 

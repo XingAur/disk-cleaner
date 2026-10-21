@@ -462,3 +462,134 @@ fn ollama_directory_without_manifests_is_kept_as_one_item() {
     assert_eq!(inv.items[0].path, root);
     assert!(plan.entries[&inv.items[0].id].ollama.is_none());
 }
+
+#[test]
+fn corrupt_ollama_manifest_blocks_scan_and_cleanup_without_deleting_anything() {
+    let (_dir, root) = ollama_fixture();
+    let (inventory, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let qwen = inventory
+        .items
+        .iter()
+        .find(|i| i.name == "qwen2.5:14b")
+        .unwrap();
+    let entry = &plan.entries[&qwen.id];
+    let other = root.join("manifests/registry.ollama.ai/library/llama3.2/3b");
+    fs::write(&other, "{truncated").unwrap();
+    assert!(
+        remove_ollama_model(entry, entry.ollama.as_ref().unwrap(), DeleteMode::Permanent).is_err()
+    );
+    assert!(qwen.path.exists());
+    assert_eq!(fs::read_dir(root.join("blobs")).unwrap().count(), 3);
+    let (inventory, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    assert_eq!(inventory.items.len(), 1);
+    assert_eq!(inventory.items[0].protection, Protection::Blocked);
+    assert!(!inventory.items[0].complete);
+    assert!(prepare(&plan, &request(&inventory)).is_err());
+}
+
+#[test]
+fn malformed_ollama_digest_and_missing_layers_are_not_silently_skipped() {
+    let (_dir, root) = ollama_fixture();
+    let other = root.join("manifests/registry.ollama.ai/library/llama3.2/3b");
+    for text in [
+        r#"{"layers":[{"digest":"sha256:short"}]}"#,
+        r#"{"unknown":true}"#,
+        r#"{"layers":[]}"#,
+    ] {
+        fs::write(&other, text).unwrap();
+        assert!(ollama::models(&root).is_err());
+    }
+}
+
+#[test]
+fn changed_ollama_blob_rejects_cleanup_before_removing_manifest() {
+    let (_dir, root) = ollama_fixture();
+    let (inventory, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let qwen = inventory
+        .items
+        .iter()
+        .find(|i| i.name == "qwen2.5:14b")
+        .unwrap();
+    let entry = &plan.entries[&qwen.id];
+    let blob = root.join(format!("blobs/sha256-{}", "a".repeat(64)));
+    fs::write(&blob, "replacement data").unwrap();
+    assert!(
+        remove_ollama_model(entry, entry.ollama.as_ref().unwrap(), DeleteMode::Permanent).is_err()
+    );
+    assert!(qwen.path.exists());
+    assert_eq!(fs::read_to_string(blob).unwrap(), "replacement data");
+}
+
+#[cfg(windows)]
+#[test]
+fn locked_ollama_manifest_does_not_make_shared_blobs_look_unshared() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let (_dir, root) = ollama_fixture();
+    let (inventory, plan) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    let qwen = inventory
+        .items
+        .iter()
+        .find(|i| i.name == "qwen2.5:14b")
+        .unwrap();
+    let entry = &plan.entries[&qwen.id];
+    let other = root.join("manifests/registry.ollama.ai/library/llama3.2/3b");
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(other)
+        .unwrap();
+    assert!(
+        remove_ollama_model(entry, entry.ollama.as_ref().unwrap(), DeleteMode::Permanent).is_err()
+    );
+    assert!(qwen.path.exists());
+    assert_eq!(fs::read_dir(root.join("blobs")).unwrap().count(), 3);
+    let (inventory, _) = scan(vec![ollama_rule(&root)], &AtomicBool::new(false), |_| {});
+    assert_eq!(inventory.items.len(), 1);
+    assert_eq!(inventory.items[0].protection, Protection::Blocked);
+    drop(lock);
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn gpu_cache_rules_scan_only_children_and_require_review_and_recycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let roots = rules::Roots {
+        home: dir.path().join("home"),
+        local: dir.path().join("local"),
+        roaming: dir.path().join("roaming"),
+        windows: dir.path().join("Windows"),
+        temp: dir.path().join("temp"),
+    };
+    let gpu: Vec<_> = rules::default_rules(&roots)
+        .into_iter()
+        .filter(|r| r.source.starts_with("NVIDIA") || r.source == "Windows / DirectX")
+        .collect();
+    assert_eq!(gpu.len(), 7);
+    assert!(gpu
+        .iter()
+        .all(|r| r.children && r.category == "cache" && r.protection == Protection::Review));
+    for cache in &gpu {
+        fs::create_dir_all(&cache.path).unwrap();
+        fs::write(cache.path.join("cache.bin"), "rebuildable cache").unwrap();
+    }
+    let keep = roots.local.join("NVIDIA/keep-driver-data.txt");
+    fs::write(&keep, "not a cache").unwrap();
+    let (inventory, plan) = scan(gpu.clone(), &AtomicBool::new(false), |_| {});
+    assert_eq!(inventory.items.len(), 7);
+    assert!(inventory
+        .items
+        .iter()
+        .all(|i| i.name == "cache.bin" && !i.permanent_allowed));
+    assert!(!inventory.items.iter().any(|i| i.path == keep));
+    let mut req = request(&inventory);
+    assert!(prepare(&plan, &req).is_err());
+    req.reviewed_ids = req.ids.clone();
+    assert!(prepare(&plan, &req).is_ok());
+    req.mode = DeleteMode::Permanent;
+    assert!(prepare(&plan, &req).is_err());
+    req.mode = DeleteMode::Recycle;
+    fs::write(&inventory.items[0].path, "changed cache data").unwrap();
+    assert!(prepare(&plan, &req).is_err());
+    assert!(gpu.iter().all(|r| r.path.is_dir()));
+    assert!(keep.exists());
+}

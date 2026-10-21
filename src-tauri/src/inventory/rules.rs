@@ -388,6 +388,8 @@ fn windows_rules(r: &Roots) -> Vec<Rule> {
             false,
         ));
     }
+    #[cfg(not(target_os = "macos"))]
+    out.extend(gpu_cache_rules(r));
     let ollama = env::var_os("OLLAMA_MODELS")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
@@ -446,6 +448,51 @@ fn windows_rules(r: &Roots) -> Vec<Rule> {
     for base in [r.home.join("ComfyUI"), r.home.join("Documents/ComfyUI")] {
         out.extend(comfy_rules(&base));
     }
+    out
+}
+/// 只列出缓存目录的直接子项，保留目录本身，不触碰驱动或 NVIDIA App 安装文件。
+#[cfg(not(target_os = "macos"))]
+fn gpu_cache_rules(r: &Roots) -> Vec<Rule> {
+    let shader_impact = "着色器编译缓存，可重建；清理后游戏可能重新编译、首次启动变慢或短暂卡顿。请关闭游戏、渲染程序和浏览器；按 NVIDIA 官方流程，先在 NVIDIA App 关闭着色器缓存并重启，清理后恢复驱动默认并重启。占用或变化的文件不要强制处理。";
+    let mut out = Vec::new();
+    for (path, legacy) in [
+        (r.local.join("NVIDIA/DXCache"), false),
+        (r.local.join("NVIDIA/GLCache"), false),
+        (r.local.join("NVIDIA Corporation/NV_Cache"), false),
+        (
+            r.home
+                .join("AppData/LocalLow/NVIDIA/PerDriverVersion/DXCache"),
+            true,
+        ),
+        (
+            r.home
+                .join("AppData/LocalLow/NVIDIA/PerDriverVersion/GLCache"),
+            true,
+        ),
+    ] {
+        let mut item = rule(
+            path,
+            "NVIDIA 着色器缓存",
+            "cache",
+            Protection::Review,
+            shader_impact,
+            true,
+        );
+        item.evidence = if legacy {
+            "NVIDIA 部分驱动版本的 LocalLow 缓存目录惯例；仅路径关联，不证明文件作者".into()
+        } else {
+            "NVIDIA 官方列出的着色器缓存目录；https://nvidia.custhelp.com/app/answers/detail/a_id/5735/（仅路径关联）".into()
+        };
+        out.push(item);
+    }
+    out.push(rule(
+        r.roaming.join("NVIDIA/ComputeCache"), "NVIDIA / CUDA", "cache", Protection::Review,
+        "CUDA 即时编译缓存，可重建；请先退出 Ollama、ComfyUI 等 GPU 计算程序。清理后首次运行可能重新编译、启动变慢；不包含模型权重或 CUDA 安装文件。自定义 CUDA_CACHE_PATH 可人工登记。", true,
+    ));
+    out.push(rule(
+        r.local.join("D3DSCache"), "Windows / DirectX", "cache", Protection::Review,
+        "Direct3D 着色器缓存，可重建；请先退出游戏及图形程序。清理后首次运行可能重新编译或短暂卡顿，也可通过 Windows 存储设置清理 DirectX 着色器缓存。", true,
+    ));
     out
 }
 pub fn default_rules(r: &Roots) -> Vec<Rule> {
